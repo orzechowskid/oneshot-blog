@@ -1,0 +1,83 @@
+.skipLink {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-primary);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.skipLink:focus {
+  left: 1rem;
+  top: 1rem;
+}
+
+.header {
+  border-bottom: 1px solid var(--color-border);
+  background: #ffffff;
+}
+
+.headerInner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.brand {
+  color: var(--color-text);
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--color-primary);
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.navLink {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.navLink:hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+.logoutForm {
+  display: inline;
+}
+
+.main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.footer {
+  border-top: 1px solid var(--color-border);
+  padding: 1.5rem 1rem;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.errorPage {
+  max-width: 40rem;
+}

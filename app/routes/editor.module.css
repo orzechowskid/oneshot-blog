@@ -1,0 +1,128 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 48rem;
+}
+
+.page h1 {
+  margin: 0;
+}
+
+.status {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  background: #eef2ff;
+  color: var(--color-primary-dark);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.section h2 {
+  margin: 0;
+}
+
+.uploadForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 32rem;
+}
+
+.fileLabel,
+.altLabel {
+  font-weight: 600;
+}
+
+.fileInput,
+.altInput {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 2px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--color-text);
+}
+
+.fileInput:focus-visible,
+.altInput:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.imageError {
+  margin: 0;
+  padding: 0.75rem;
+  border: 2px solid var(--color-danger);
+  border-radius: 8px;
+  background: #fef2f2;
+  color: var(--color-danger-dark);
+  font-weight: 600;
+}
+
+.imageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.imageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.imagePreview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: var(--color-surface);
+}
+
+.imageAlt {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.95rem;
+}
+
+.snippet {
+  display: block;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.deleteRow {
+  margin-top: 1rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.deleteHelp {
+  color: var(--color-danger-dark);
+}
+
+.emptyImages {
+  color: var(--color-muted);
+}

@@ -1,0 +1,45 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 2px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--color-text);
+}
+
+.input:focus-visible,
+.textarea:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.input[data-invalid],
+.textarea[data-invalid] {
+  border-color: var(--color-danger);
+}
+
+.textarea {
+  min-height: 12rem;
+  resize: vertical;
+}
+
+.description {
+  color: var(--color-muted);
+  font-size: 0.95rem;
+}
+
+.error {
+  color: var(--color-danger-dark);
+  font-weight: 600;
+}

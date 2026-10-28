@@ -1,0 +1,18 @@
+.page {
+  max-width: 32rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.actions {
+  margin-top: 1rem;
+}
+
+.hint {
+  margin-top: 1.5rem;
+  color: var(--color-muted);
+}

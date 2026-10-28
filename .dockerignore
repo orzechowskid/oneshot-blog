@@ -1,0 +1,14 @@
+node_modules
+build
+.git
+.gitignore
+tests
+storybook-static
+playwright-report
+test-results
+.env
+.env.*
+npm-debug.log
+.react-router
+
+.github

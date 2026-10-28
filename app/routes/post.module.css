@@ -1,0 +1,16 @@
+.article {
+  max-width: 48rem;
+}
+
+.title {
+  margin: 0 0 0.5rem;
+}
+
+.meta {
+  margin: 0 0 1.5rem;
+  color: var(--color-muted);
+}
+
+.back {
+  margin-top: 2rem;
+}
