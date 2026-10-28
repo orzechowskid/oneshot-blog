@@ -21,7 +21,7 @@ No other global CLI tools are needed. Playwright browsers are installed through 
 - Choose `1` (local): writes a development `.env` with the Docker Compose database URL, port 3000, bootstrap credentials, and a generated `SEED_TOKEN`.
 - Choose `2` (Fly.io): writes the settings used by `scripts/deploy.ts` and updates the `app` and `primary_region` in `fly.toml`. It can run the deploy at the end.
 
-The installer asks only for values that have no working default: the owner email and password. Press Enter to accept each default. Leave the password blank to generate one. The owner password and Fly API token prompts do not echo typed characters. The installer writes the owner password and `SEED_TOKEN` to `.env`; it prints `SEED_TOKEN` once and does not print the owner password. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
+The installer asks only for values that have no working default: the owner email and password. Press Enter to accept each default. Leave the password blank to generate one. The owner password and Fly API token prompts do not echo typed characters. The installer writes the owner password and `SEED_TOKEN` to `.env`; it does not print either secret. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
 
 The npm scripts load `.env` with Node's `--env-file-if-exists=.env`, so the file applies to `npm run dev`, `npm start`, `npm run deploy`, and `npm run seed`.
 

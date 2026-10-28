@@ -282,7 +282,6 @@ async function main(): Promise<void> {
     console.log(`\nWrote ${envPath}.`);
     if (backup) console.log(`Existing .env backed up to ${backup}.`);
     console.log(`Owner email: ${email}`);
-    console.log(`SEED_TOKEN: ${seedToken}`);
 
     console.log("\nNext steps:");
     console.log("  npm run db:up");
@@ -342,7 +341,6 @@ async function main(): Promise<void> {
     );
   }
   console.log(`Owner email: ${email}`);
-  console.log(`SEED_TOKEN: ${seedToken}`);
 
   const deployNow = await askChoice(
     "Deploy to Fly.io now? y = yes, n = no",
