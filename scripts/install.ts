@@ -148,6 +148,7 @@ function saveEnv(entries: Array<[string, string]>): string | null {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     backupPath = `${envPath}.backup-${stamp}`;
     copyFileSync(envPath, backupPath);
+    chmodSync(backupPath, 0o600);
   }
 
   writeFileSync(envPath, buildEnv(entries));
