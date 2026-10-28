@@ -154,7 +154,7 @@ The workflow needs one secret in the GitHub repository:
 Create the app and database once before the first action run, for example with `npm run setup` and mode `2`. Then create a deploy token:
 
 ```bash
-flyctl tokens create deploy -a oneshot-blog -x 720h
+flyctl tokens create deploy -a oneshot-blog -x 8760h
 ```
 
 Copy the token into GitHub: repository Settings → Secrets and variables → Actions → New repository secret. Use the name `FLY_API_TOKEN`.
