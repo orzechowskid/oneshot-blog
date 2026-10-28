@@ -20,28 +20,35 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const APP_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const REGION_PATTERN = /^[a-z0-9-]{1,32}$/;
 
-const rl = createInterface({ input: process.stdin, output: process.stdout });
 const bufferedLines: string[] = [];
 const waiters: Array<(line: string | null) => void> = [];
 let inputClosed = false;
 
-rl.on("line", (line) => {
-  const waiter = waiters.shift();
-  if (waiter) waiter(line);
-  else bufferedLines.push(line);
-});
+function createRl() {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
 
-rl.on("close", () => {
-  inputClosed = true;
-  for (const waiter of waiters) waiter(null);
-  waiters.length = 0;
-});
+  rl.on("line", (line) => {
+    const waiter = waiters.shift();
+    if (waiter) waiter(line);
+    else bufferedLines.push(line);
+  });
 
-rl.on("SIGINT", () => {
-  rl.close();
-  console.log("\nInstall cancelled. Nothing was written.");
-  process.exit(130);
-});
+  rl.on("close", () => {
+    inputClosed = true;
+    for (const waiter of waiters) waiter(null);
+    waiters.length = 0;
+  });
+
+  rl.on("SIGINT", () => {
+    rl.close();
+    console.log("\nInstall cancelled. Nothing was written.");
+    process.exit(130);
+  });
+
+  return rl;
+}
+
+let rl = createRl();
 
 function endInput(): never {
   rl.close();
@@ -61,6 +68,60 @@ async function readLine(prompt: string): Promise<string> {
 
   if (line === null) return endInput();
   return line;
+}
+
+async function readSecretLine(prompt: string): Promise<string> {
+  if (!process.stdin.isTTY) return readLine(prompt);
+
+  process.stdout.write(prompt);
+
+  rl.close();
+  inputClosed = false;
+  bufferedLines.length = 0;
+  waiters.length = 0;
+
+  const wasRaw = process.stdin.isRaw;
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+
+  return new Promise<string>((resolve) => {
+    let value = "";
+    let onData: (chunk: Buffer) => void;
+
+    const cleanup = () => {
+      process.stdin.off("data", onData);
+      process.stdin.setRawMode(wasRaw);
+      process.stdin.pause();
+      rl = createRl();
+      process.stdin.resume();
+      inputClosed = false;
+    };
+
+    onData = (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      for (const char of text) {
+        if (char === "\r" || char === "\n") {
+          cleanup();
+          process.stdout.write("\n");
+          resolve(value);
+          return;
+        }
+        if (char === "\u0003") {
+          cleanup();
+          process.stdout.write("\n");
+          console.log("Install cancelled. Nothing was written.");
+          process.exit(130);
+        }
+        if (char === "\u007f" || char === "\b") {
+          value = value.slice(0, -1);
+          continue;
+        }
+        value += char;
+      }
+    };
+
+    process.stdin.on("data", onData);
+  });
 }
 
 function generatePassword(): string {
@@ -113,7 +174,7 @@ async function askEmail(question: string, fallback: string): Promise<string> {
 async function askPassword(): Promise<string> {
   for (;;) {
     const answer = (
-      await readLine("Owner password (leave blank to generate one): ")
+      await readSecretLine("Owner password (leave blank to generate one): ")
     ).trim();
     if (!answer) return generatePassword();
     if (answer.length >= 12 && answer.length <= 200) return answer;
@@ -221,14 +282,13 @@ async function main(): Promise<void> {
     console.log(`\nWrote ${envPath}.`);
     if (backup) console.log(`Existing .env backed up to ${backup}.`);
     console.log(`Owner email: ${email}`);
-    console.log(`Owner password: ${password}`);
     console.log(`SEED_TOKEN: ${seedToken}`);
 
     console.log("\nNext steps:");
     console.log("  npm run db:up");
     console.log("  npm run dev");
     console.log(
-      "Open http://127.0.0.1:3000 and sign in with the owner credentials above.",
+      "Open http://127.0.0.1:3000 and sign in with the owner email and the password in .env.",
     );
     return;
   }
@@ -245,10 +305,9 @@ async function main(): Promise<void> {
     REGION_PATTERN,
     "Use a lowercase Fly region code such as iad or lhr.",
   );
-  const apiToken = await ask(
-    "Fly API token (leave blank to use flyctl login)",
-    "",
-  );
+  const apiToken = (
+    await readSecretLine("Fly API token (leave blank to use flyctl login): ")
+  ).trim();
   const databaseUrl = await ask(
     "DATABASE_URL (leave blank to create Fly Postgres)",
     "",
@@ -283,7 +342,6 @@ async function main(): Promise<void> {
     );
   }
   console.log(`Owner email: ${email}`);
-  console.log(`Owner password: ${password}`);
   console.log(`SEED_TOKEN: ${seedToken}`);
 
   const deployNow = await askChoice(
