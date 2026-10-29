@@ -2,22 +2,36 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 
-const budgetBytes = 490000;
+const rawCeilingBytes = 490000;
+const gzipCeilingBytes = 160000;
+const adminEditRawCeilingBytes = 60000;
+const adminEditChunkPattern = /^admin-edit-.*\.js$/;
 const forbiddenMarkers = ["sanitize-html", "htmlparser2", "postcss", "entities"];
 
 const assetsDir = join(process.cwd(), "build", "client", "assets");
 const files = readdirSync(assetsDir)
   .filter((name) => name.endsWith(".js"))
   .sort();
+const cssFiles = readdirSync(assetsDir)
+  .filter((name) => name.endsWith(".css"))
+  .sort();
 
 let rawTotal = 0;
 let gzipTotal = 0;
+let cssTotal = 0;
 const hits: string[] = [];
+const chunks: { name: string; raw: number; gzipped: number }[] = [];
+
+for (const name of cssFiles) {
+  cssTotal += readFileSync(join(assetsDir, name)).length;
+}
 
 for (const name of files) {
   const content = readFileSync(join(assetsDir, name));
+  const gzipped = gzipSync(content).length;
   rawTotal += content.length;
-  gzipTotal += gzipSync(content).length;
+  gzipTotal += gzipped;
+  chunks.push({ name, raw: content.length, gzipped });
   for (const marker of forbiddenMarkers) {
     if (content.includes(marker)) {
       hits.push(`${marker} in ${name}`);
@@ -25,33 +39,60 @@ for (const name of files) {
   }
 }
 
+const adminEdit = chunks.find((chunk) =>
+  adminEditChunkPattern.test(chunk.name),
+);
+
 console.log(`Files: ${files.length}`);
-console.log(`Raw total: ${rawTotal} bytes (budget ${budgetBytes})`);
-console.log(`Gzipped total: ${gzipTotal} bytes`);
+console.log(
+  `Current: ${rawTotal} bytes raw (ceiling ${rawCeilingBytes}), ${gzipTotal} bytes gzipped (ceiling ${gzipCeilingBytes}).`,
+);
+console.log("Per-chunk sizes, raw and gzipped, largest first:");
+for (const chunk of [...chunks].sort((a, b) => b.raw - a.raw)) {
+  console.log(
+    `  ${chunk.name}: ${chunk.raw} bytes raw, ${chunk.gzipped} bytes gzipped`,
+  );
+}
+if (adminEdit) {
+  console.log(
+    `admin-edit chunk: ${adminEdit.raw} bytes raw (ceiling ${adminEditRawCeilingBytes}).`,
+  );
+} else {
+  console.log("admin-edit chunk: not present in this build.");
+}
+console.log(
+  `CSS is out of scope for this check: ${cssTotal} bytes across ${cssFiles.length} files.`,
+);
 if (hits.length === 0) {
   console.log(
-    `Scan: none of ${forbiddenMarkers.join(", ")} found in any client chunk.`,
+    `Scan (advisory, never fails the build): none of ${forbiddenMarkers.join(", ")} found in any client chunk.`,
   );
 } else {
   for (const hit of hits) {
-    console.log(`Scan: found ${hit}`);
+    console.log(`Scan (advisory, never fails the build): found ${hit}`);
   }
 }
-console.log("Measured baseline: 481765 raw, 154781 gzipped.");
-console.log("Measured current: 482413 raw, 154926 gzipped.");
 console.log(
-  "Measured browser-preview cost the check prevents: 636035 raw, 210620 gzipped.",
+  "Scan stays advisory: minification drops package names, and entities is an ordinary English word.",
 );
 
 let failed = false;
-if (rawTotal > budgetBytes) {
+if (rawTotal > rawCeilingBytes) {
   console.error(
-    `FAIL: raw total ${rawTotal} exceeds the ${budgetBytes} byte budget.`,
+    `FAIL: raw total ${rawTotal} exceeds the ${rawCeilingBytes} byte ceiling.`,
   );
   failed = true;
 }
-if (hits.length > 0) {
-  console.error(`FAIL: server-only dependency code found in client chunks.`);
+if (gzipTotal > gzipCeilingBytes) {
+  console.error(
+    `FAIL: gzipped total ${gzipTotal} exceeds the ${gzipCeilingBytes} byte ceiling.`,
+  );
+  failed = true;
+}
+if (adminEdit && adminEdit.raw > adminEditRawCeilingBytes) {
+  console.error(
+    `FAIL: admin-edit chunk ${adminEdit.raw} bytes raw exceeds the ${adminEditRawCeilingBytes} byte ceiling.`,
+  );
   failed = true;
 }
 if (failed) {
