@@ -9,6 +9,7 @@ const FIELD_LABELS: Record<string, string> = {
   password: "Password",
   image: "Image",
   altText: "Image description",
+  form: "The form",
 };
 
 export function FormErrorSummary({

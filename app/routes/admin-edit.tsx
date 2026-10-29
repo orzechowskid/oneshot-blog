@@ -43,22 +43,6 @@ function notFound(): never {
 // changed (published, or deleted) while the request was in flight.
 const STALE_ROW_MESSAGE = "The post changed elsewhere; reload and try again.";
 
-// The answer for that conflict on this route: a navigate request is
-// redirected back to the edit page with the message in the named query
-// parameter, a fetch request gets 409 JSON. The same split the publish
-// guard in the publish intent uses.
-function conflict(
-  request: Request,
-  param: "publishError" | "saveError",
-  id: string,
-  message: string,
-): Response {
-  if ((request.headers.get("sec-fetch-mode") ?? "") === "navigate") {
-    return redirect(`/admin/${id}/edit?${param}=${encodeURIComponent(message)}`);
-  }
-  return Response.json({ error: message }, { status: 409 });
-}
-
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireUser(request);
 
@@ -92,8 +76,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     images: await listImages(id),
     saved: url.searchParams.get("saved") === "1",
     imageUploaded: url.searchParams.get("imageUploaded") === "1",
-    publishError: url.searchParams.get("publishError"),
-    saveError: url.searchParams.get("saveError"),
   };
 }
 
@@ -171,8 +153,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (!result.saved) {
       if (result.fieldErrors.form) {
         // The status guard did not apply: the row was published while the
-        // save was in flight. The redirect carries the message.
-        return conflict(request, "saveError", id, STALE_ROW_MESSAGE);
+        // save was in flight. The 409 carries the message and the
+        // submitted values.
+        return data(
+          {
+            errors: {
+              form: STALE_ROW_MESSAGE,
+            },
+            values,
+          },
+          { status: 409 },
+        );
       }
       // The 50-attempt address cap: a field error naming the address the
       // form held, never a server error.
@@ -199,12 +190,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
       // The disabled control in the UI is not the only guard (D6).
       const message =
         "The post is already published and has no draft to publish.";
-      if ((request.headers.get("sec-fetch-mode") ?? "") === "navigate") {
-        return redirect(
-          `/admin/${id}/edit?publishError=${encodeURIComponent(message)}`,
-        );
-      }
-      return Response.json({ error: message }, { status: 409 });
+      return data(
+        {
+          errors: {
+            form: message,
+          },
+          values,
+        },
+        { status: 409 },
+      );
     }
 
     const errors = validatePublish(values, isPublished);
@@ -227,8 +221,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (!saved.saved) {
       if (saved.fieldErrors.form) {
         // The status guard did not apply: the row was published while the
-        // publish was in flight. The redirect carries the message.
-        return conflict(request, "publishError", id, STALE_ROW_MESSAGE);
+        // publish was in flight. The 409 carries the message and the
+        // submitted values.
+        return data(
+          {
+            errors: {
+              form: STALE_ROW_MESSAGE,
+            },
+            values,
+          },
+          { status: 409 },
+        );
       }
       // The 50-attempt address cap: a field error naming the address the
       // form held, never a server error.
@@ -253,14 +256,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
         // row is gone only if the post is.
         const current = await getPost(id);
         if (!current) notFound();
-        return conflict(request, "publishError", id, STALE_ROW_MESSAGE);
+        return data(
+          {
+            errors: {
+              form: STALE_ROW_MESSAGE,
+            },
+            values,
+          },
+          { status: 409 },
+        );
       }
       notFound();
     }
     if (!result.saved) {
       // The draft-row guard did not apply: a concurrent publish won the
-      // race. The redirect carries the message.
-      return conflict(request, "publishError", id, STALE_ROW_MESSAGE);
+      // race. The 409 carries the message and the submitted values.
+      return data(
+        {
+          errors: {
+            form: STALE_ROW_MESSAGE,
+          },
+          values,
+        },
+        { status: 409 },
+      );
     }
     return redirect(`/admin/${id}/edit?saved=1`);
   }
@@ -303,8 +322,6 @@ export default function AdminEditRoute() {
     images,
     saved,
     imageUploaded,
-    publishError,
-    saveError,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
@@ -333,22 +350,11 @@ export default function AdminEditRoute() {
 
       {saved ? <p className={styles.status}>Post saved.</p> : null}
       {imageUploaded ? <p className={styles.status}>Image uploaded.</p> : null}
-      {publishError ? (
-        <p className={styles.imageError} role="alert">
-          {publishError}
-        </p>
-      ) : null}
-      {saveError ? (
-        <p className={styles.imageError} role="alert">
-          {saveError}
-        </p>
-      ) : null}
 
       <PostForm
         action={`/admin/${post.id}/edit`}
         values={values}
         errors={errors}
-        submitLabel="Save post"
         initialPreviewHtml={initialPreviewHtml}
         id={post.id}
         isPublished={isPublished}

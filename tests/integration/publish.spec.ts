@@ -8,17 +8,24 @@ import { expect, test, type Page } from "@playwright/test";
 // scenario. Time assertions are read from the
 // public post page and the admin list, never from the database.
 //
-// The edit action branches on a navigate fetch: a rejected publish
-// submitted through the form answers with the editor page and an alert
-// carrying the conflict message, while a non-form request answers with
-// HTTP 409 carrying the conflict message in the response body. The
-// conflict test posts directly to the edit action with the page's own
-// session cookies and asserts the 409 and the message in the body. Where
-// the "Post saved." confirmation is
-// already on screen from a previous save, the publish or draft-save waits
-// for a loader re-render signal instead: the address control drops out of
-// the form when a post becomes published, and the Discard draft control
-// appears when a draft attaches and disappears when it clears.
+// The conflict test sends a plain POST to the edit action with the
+// page's own session cookies and asserts status 409 with the conflict
+// message in the response body. The in-editor form message is covered by
+// the two-tab test "A publish rejected by a draft discarded in another
+// tab keeps the editor and the typed text": the first tab discards the
+// attached draft, the second tab publishes into the published row with no
+// attached draft, and the editor keeps the typed title and shows the
+// conflict message in the form error summary. The stale-guard message is
+// not covered by a sequential browser test: a guard miss needs a publish
+// to land between the route's fresh read of the row and its guarded
+// UPDATE, that is, two requests in flight at the same time. A test that
+// publishes first, waits for the confirmation, and only then saves in a
+// second tab takes the attached-draft write path and succeeds instead.
+// Where the "Post saved." confirmation is already on screen from a
+// previous save, the publish or draft-save waits for a loader re-render
+// signal instead: the address control drops out of the form when a post
+// becomes published, and the Discard draft control appears when a draft
+// attaches and disappears when it clears.
 
 const OWNER_EMAIL = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
 const OWNER_PASSWORD =
@@ -525,7 +532,7 @@ test("An address belonging to an unpublished draft is not found", async ({
   await expect(page.getByRole("link", { name: fields.title })).toHaveCount(0);
 });
 
-test("The admin editor shows no control that removes a published post", async ({
+test("The admin editor shows no control that unpublishes a published post", async ({
   page,
 }) => {
   const fields: PostFields = {
@@ -553,4 +560,75 @@ test("The admin editor shows no control that removes a published post", async ({
   const response = await page.goto(`/posts/${fields.slug}`);
   expect(response?.status()).toBe(200);
   await expect(page.locator("strong")).toHaveText("Public");
+});
+
+test("A publish rejected by a draft discarded in another tab keeps the editor and the typed text", async ({
+  page,
+}) => {
+  const fields: PostFields = {
+    title: "Discarded draft publish post",
+    slug: "discarded-draft-publish-post",
+    body: "Discarded draft publish body. **Discarded** marker.",
+    excerpt: "Discarded draft publish excerpt.",
+  };
+  // The body typed in the first tab to attach a draft after the publish.
+  const draftBody = "Draft body with a **changed** marker.";
+  // The title typed in the second tab before the first tab discards the
+  // attached draft; the rejected publish must keep it in the field.
+  const secondTabTitle = "Discarded draft publish second tab title";
+  await login(page);
+
+  // Create a published post and stay on its editor.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await publish(page);
+  // The "Post saved." confirmation is on screen from the publish, so wait
+  // for the loader re-render: a published post shows the address as a
+  // read-only control that is no longer part of the form.
+  await expect(page.locator('input[name="slug"]')).toHaveCount(0);
+
+  // Attach a draft with a body change.
+  await page.getByLabel("Body").fill(draftBody);
+  await saveDraft(page);
+  // The "Post saved." confirmation was already on screen from the
+  // publish, so wait for the loader re-render: the draft is attached, so
+  // the Discard draft control appears and the Publish control is enabled.
+  await expect(
+    page.getByRole("button", { name: "Discard draft" }),
+  ).toBeVisible();
+
+  // Open the same editor in the second page of the same context: the
+  // draft is attached, so its form loads with the draft values and the
+  // Publish control is enabled.
+  const id = editPostId(page);
+  const other = await page.context().newPage();
+  await other.goto(`/admin/${id}/edit`);
+
+  // Type a marker into the second page's Title: the form is dirty.
+  await other.getByLabel("Title").fill(secondTabTitle);
+
+  // Discard the attached draft from the first page: the handler accepts
+  // the confirm dialog, and the discard lands on the server before the
+  // second page publishes.
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Discard draft" }).click();
+  // The "Post saved." confirmation was already on screen from the draft
+  // save, so wait for the loader re-render: the draft is cleared, so the
+  // Discard draft control disappears.
+  await expect(
+    page.getByRole("button", { name: "Discard draft" }),
+  ).toHaveCount(0);
+
+  // Publish from the second page: the action sees a published row with no
+  // attached draft and answers 409 with the conflict form message.
+  await other.getByRole("button", { name: "Publish", exact: true }).click();
+
+  // The editor keeps the typed value and reports the conflict: the URL is
+  // still the editor route, the alert names the conflict, and the Title
+  // field still holds the marker typed in the second page.
+  await expect(other).toHaveURL(new RegExp(`/admin/${id}/edit`));
+  await expect(other.getByRole("alert")).toContainText(
+    PUBLISH_CONFLICT_MESSAGE,
+  );
+  await expect(other.getByLabel("Title")).toHaveValue(secondTabTitle);
 });
