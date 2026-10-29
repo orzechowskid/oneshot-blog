@@ -6,7 +6,6 @@ export type PostValues = {
   slug: string;
   body: string;
   excerpt: string;
-  published: boolean;
 };
 
 export type LoginValues = {
@@ -23,14 +22,12 @@ export function readPostForm(formData: FormData): PostValues {
   const rawSlug = String(formData.get("slug") ?? "").trim();
   const body = String(formData.get("body") ?? "");
   const rawExcerpt = String(formData.get("excerpt") ?? "").trim();
-  const published = formData.get("published") === "yes";
 
   return {
     title,
     slug: rawSlug ? slugify(rawSlug) : slugify(title),
     body,
     excerpt: rawExcerpt || makeExcerpt(body),
-    published,
   };
 }
 

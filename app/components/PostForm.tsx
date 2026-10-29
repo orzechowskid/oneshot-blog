@@ -21,9 +21,6 @@ export type PostFormProps = {
   action: string;
   values: PostFormValues;
   errors: Record<string, string>;
-  // Accepted for the current admin route calls; the submit controls carry
-  // intent values (save-draft, publish, discard-draft) instead.
-  submitLabel: string;
   initialPreviewHtml?: string;
   id?: string;
   isPublished?: boolean;

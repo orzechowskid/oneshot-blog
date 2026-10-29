@@ -18,7 +18,6 @@ const EMPTY_VALUES: PostValues = {
   slug: "",
   body: "",
   excerpt: "",
-  published: false,
 };
 
 export async function loader() {
@@ -127,7 +126,6 @@ export default function AdminNewRoute() {
         action="/admin/new"
         values={actionData?.values ?? EMPTY_VALUES}
         errors={actionData?.errors ?? {}}
-        submitLabel="Create post"
         initialPreviewHtml={initialPreviewHtml}
       />
     </section>

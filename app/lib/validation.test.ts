@@ -16,14 +16,12 @@ describe("readPostForm", () => {
     const form = new FormData();
     form.set("title", "  Hello World  ");
     form.set("body", "Some text");
-    form.set("published", "yes");
 
     expect(readPostForm(form)).toEqual({
       title: "Hello World",
       slug: "hello-world",
       body: "Some text",
       excerpt: "Some text",
-      published: true,
     });
   });
 
@@ -149,7 +147,6 @@ describe("validateDraftSave", () => {
     slug: "hello",
     body: "",
     excerpt: "",
-    published: false,
   };
 
   it("rejects a draft save without a title and shows no address error", () => {
@@ -224,7 +221,6 @@ describe("validatePublish", () => {
     slug: "hello",
     body: "Some text",
     excerpt: "Some text",
-    published: true,
   };
 
   it("accepts a valid publish", () => {
@@ -247,7 +243,6 @@ describe("validatePublish", () => {
         slug: "a-post",
         body: "Body text.",
         excerpt: "Excerpt.",
-        published: true,
       }).title,
     ).toBe("Enter a title.");
   });
