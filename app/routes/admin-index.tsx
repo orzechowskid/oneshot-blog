@@ -32,32 +32,43 @@ export default function AdminIndexRoute() {
             <tr>
               <th scope="col">Title</th>
               <th scope="col">Status</th>
-              <th scope="col">Updated</th>
+              <th scope="col">Last change</th>
               <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {posts.map((post) => (
-              <tr key={post.id}>
-                <td>{post.title}</td>
-                <td className={styles.status}>
-                  {post.status === "published" ? "Published" : "Draft"}
-                </td>
-                <td>
-                  <time dateTime={toIsoString(post.updated_at)}>
-                    {formatDate(post.updated_at)}
-                  </time>
-                </td>
-                <td>
-                  <div className={styles.actions}>
-                    <Link href={`/admin/${post.id}/edit`}>Edit</Link>
-                    {post.status === "published" ? (
-                      <Link href={`/posts/${post.slug}`}>View</Link>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {posts.map((post) => {
+              const draftAttached = post.draft_title !== null;
+              const lastChange =
+                draftAttached && post.draft_updated_at !== null
+                  ? post.draft_updated_at
+                  : post.updated_at;
+              return (
+                <tr key={post.id}>
+                  <td>{post.title}</td>
+                  <td className={styles.status}>
+                    {post.status === "draft"
+                      ? "Draft"
+                      : draftAttached
+                        ? "Published with draft attached"
+                        : "Published"}
+                  </td>
+                  <td>
+                    <time dateTime={toIsoString(lastChange)}>
+                      {formatDate(lastChange)}
+                    </time>
+                  </td>
+                  <td>
+                    <div className={styles.actions}>
+                      <Link href={`/admin/${post.id}/edit`}>Edit</Link>
+                      {post.status === "published" ? (
+                        <Link href={`/posts/${post.slug}`}>View</Link>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

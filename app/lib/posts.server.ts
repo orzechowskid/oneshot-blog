@@ -253,36 +253,6 @@ export async function createPost(input: PostInput): Promise<Post> {
   return post;
 }
 
-export async function updatePost(id: string, input: PostInput): Promise<Post | null> {
-  await ensureSchema();
-  const slug = await resolveSlug(input.slug, id);
-  const result = await getPool().query<Post>(
-    `UPDATE posts
-     SET slug = $1,
-         title = $2,
-         body_markdown = $3,
-         excerpt = $4,
-         status = $5,
-         published_at = CASE
-           WHEN $5 = 'published' THEN COALESCE(published_at, now())
-           ELSE NULL
-         END,
-         updated_at = now()
-     WHERE id = $6
-     RETURNING id, slug, title, excerpt, status, published_at, updated_at,
-               body_markdown, created_at`,
-    [
-      slug,
-      input.title,
-      input.body,
-      input.excerpt,
-      input.published ? "published" : "draft",
-      id,
-    ],
-  );
-  return result.rows[0] ?? null;
-}
-
 export async function createDraft(
   input: DraftInput,
 ): Promise<PostLifecycleResult | null> {
