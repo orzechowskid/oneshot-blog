@@ -219,6 +219,7 @@ export function MarkdownEditor({
         <section
           className={styles.previewArea}
           aria-label="Markdown preview"
+          tabIndex={0}
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
       </div>

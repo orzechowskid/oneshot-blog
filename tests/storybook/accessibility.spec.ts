@@ -14,6 +14,10 @@ const stories = [
   "components-postcard--long-title",
   "components-markdowncontent--article",
   "components-formerrorsummary--errors",
+  "components-markdowneditor--wide-screen",
+  "components-markdowneditor--narrow-screen",
+  "components-markdowneditor--long-body",
+  "components-markdowneditor--empty-preview",
 ];
 
 for (const storyId of stories) {

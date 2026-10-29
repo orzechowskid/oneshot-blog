@@ -32,40 +32,49 @@ async function createPublishedPost(
 
 test("saving a draft on a published post leaves the public page showing the published title, body, and excerpt while the editor shows the draft", async ({ page }) => {
   await login(page);
+  // The title, address, and excerpts are unique to this test: the public
+  // listing also carries posts created by other spec files in the same run.
   const editPath = await createPublishedPost(page, {
-    title: "Published post",
-    slug: "published-post",
-    body: "Published **stays** live.",
-    excerpt: "Published excerpt.",
+    title: "DE published post",
+    slug: "de-published-post",
+    body: "DE published **stays** live.",
+    excerpt: "DE published excerpt.",
   });
 
   await page.goto(editPath);
-  await page.getByLabel("Title").fill("Draft title");
-  await page.getByLabel("Body").fill("Draft **replaces** nothing.");
-  await page.getByLabel("Excerpt").fill("Draft excerpt.");
+  await page.getByLabel("Title").fill("DE draft title");
+  await page.getByLabel("Body").fill("DE draft **replaces** nothing.");
+  await page.getByLabel("Excerpt").fill("DE draft excerpt.");
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByText("Post saved.")).toBeVisible();
 
   // The editor shows the attached draft.
-  await expect(page.getByLabel("Title")).toHaveValue("Draft title");
+  await expect(page.getByLabel("Title")).toHaveValue("DE draft title");
   await expect(page.getByLabel("Body")).toHaveValue(
-    "Draft **replaces** nothing.",
+    "DE draft **replaces** nothing.",
   );
-  await expect(page.getByLabel("Excerpt")).toHaveValue("Draft excerpt.");
+  await expect(page.getByLabel("Excerpt")).toHaveValue("DE draft excerpt.");
 
   // The public page still shows the published title and body.
-  await page.goto("/posts/published-post");
+  await page.goto("/posts/de-published-post");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Published post" }),
+    page.getByRole("heading", { level: 1, name: "DE published post" }),
   ).toBeVisible();
   await expect(page.locator("strong")).toHaveText("stays");
   await expect(page.getByText("replaces")).toHaveCount(0);
 
-  // The public listing still shows the published excerpt, not the draft's.
+  // The public listing still shows the published excerpt for this post,
+  // not the draft's. The assertions are scoped to this post's card because
+  // the listing also carries the other posts' titles and excerpts.
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Published post" })).toBeVisible();
-  await expect(page.getByText("Published excerpt.")).toBeVisible();
-  await expect(page.getByText("Draft excerpt.")).toHaveCount(0);
+  const card = page
+    .locator("article")
+    .filter({ has: page.getByRole("link", { name: "DE published post" }) });
+  await expect(
+    card.getByRole("link", { name: "DE published post" }),
+  ).toBeVisible();
+  await expect(card.getByText("DE published excerpt.")).toBeVisible();
+  await expect(page.getByText("DE draft excerpt.")).toHaveCount(0);
 });
 
 test("the address control is read-only on a published post", async ({ page }) => {

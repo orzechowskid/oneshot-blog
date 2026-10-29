@@ -7,10 +7,13 @@ import { expect, test, type Page } from "@playwright/test";
 // scenario, named after the scenario. Time assertions are read from the
 // public post page and the admin list, never from the database.
 //
-// A rejected publish submitted through the form answers with the editor
-// page and an alert carrying the conflict message (the edit action
-// branches on a navigate fetch), so the conflict test asserts the visible
-// message, not a raw JSON status. Where the "Post saved." confirmation is
+// The edit action branches on a navigate fetch: a rejected publish
+// submitted through the form answers with the editor page and an alert
+// carrying the conflict message, while a non-form request answers with
+// HTTP 409 carrying the conflict message in the response body. The
+// conflict test posts directly to the edit action with the page's own
+// session cookies and asserts the 409 and the message in the body. Where
+// the "Post saved." confirmation is
 // already on screen from a previous save, the publish or draft-save waits
 // for a loader re-render signal instead: the address control drops out of
 // the form when a post becomes published, and the Discard draft control
@@ -171,12 +174,18 @@ test("Publishing a draft-only post publishes the stored values", async ({ page }
   expect(published.text).toBe(readableDate(new Date()));
 
   // The stored address is the public address, and the stored excerpt is the
-  // public excerpt in the listing.
+  // public excerpt in the listing. The assertions are scoped to this post's
+  // card because the listing also carries the other posts' titles and
+  // excerpts.
   await page.goto("/");
-  const link = page.getByRole("link", { name: fields.title });
+  const card = page
+    .locator("article")
+    .filter({ has: page.getByRole("link", { name: fields.title }) });
+  await expect(card).toHaveCount(1);
+  const link = card.getByRole("link", { name: fields.title });
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", `/posts/${fields.slug}`);
-  await expect(page.getByText(fields.excerpt)).toBeVisible();
+  await expect(card.getByText(fields.excerpt)).toBeVisible();
 });
 
 test("Republishing a published post with a draft", async ({ page }) => {
@@ -272,21 +281,27 @@ test("Publish is unavailable on a published post with no attached draft", async 
   ).toHaveCount(0);
 
   // The server rejects a publish request for a published row with no
-  // attached draft with a conflict. A form submission answers with the
-  // editor page and the conflict message in an alert, so the test asserts
-  // the message the owner sees. The Publish control is disabled, so the
-  // submission re-enables it and clicks it.
+  // attached draft with a conflict. The disabled control is the UI half
+  // of the guard (D6); the server guard answers with HTTP 409 carrying
+  // the conflict message. The Publish control is disabled, so the test
+  // posts to the edit action with the page's own session cookies instead
+  // of clicking a control the browser never enables. The framework
+  // answers a nested-route mutation with a document payload that embeds
+  // the conflict message, not a bare JSON body, so the test asserts the
+  // message in the response body text.
   const id = editPostId(page);
-  await page
-    .locator('button[name="intent"][value="publish"]')
-    .evaluate((el) => el.removeAttribute("disabled"));
-  await page.getByRole("button", { name: "Publish", exact: true }).click();
-
-  await expect(page.getByRole("alert")).toHaveText(PUBLISH_CONFLICT_MESSAGE);
+  const response = await page.request.post(`/admin/${id}/edit`, {
+    form: {
+      intent: "publish",
+      title: fields.title,
+      slug: fields.slug,
+      body: fields.body,
+      excerpt: fields.excerpt,
+    },
+  });
+  expect(response.status()).toBe(409);
+  expect(await response.text()).toContain(PUBLISH_CONFLICT_MESSAGE);
   expect(editPostId(page)).toBe(id);
-  expect(new URL(page.url()).searchParams.get("publishError")).toBe(
-    PUBLISH_CONFLICT_MESSAGE,
-  );
 
   // The post is still public at its address, unchanged.
   const published = await publicPostTime(page, fields.slug);
@@ -303,7 +318,7 @@ test("A reader sees published content, not the attached draft", async ({
     title: "Draft attached post",
     slug: "draft-attached-post",
     body: "Published body with a **kept** marker.",
-    excerpt: "Published excerpt.",
+    excerpt: "Draft attached post published excerpt.",
   };
   const draftBody = "Draft body with a **hidden** marker.";
   const draftExcerpt = "Draft excerpt that must stay hidden.";
@@ -340,9 +355,18 @@ test("A reader sees published content, not the attached draft", async ({
   await expect(page.getByText("hidden", { exact: true })).toHaveCount(0);
   await expect(page.getByText(draftExcerpt)).toHaveCount(0);
 
-  // The public listing shows the published excerpt, not the draft's.
+  // The public listing shows the published excerpt for this post, not
+  // the draft's. The positive assertion is scoped to this post's card
+  // because the listing also carries the other posts' excerpts. The
+  // negative one is page-wide: the draft excerpt must not appear anywhere
+  // on the public site.
   await page.goto("/");
-  await expect(page.getByText(fields.excerpt)).toBeVisible();
+  const card = page
+    .locator("article")
+    .filter({ has: page.getByRole("link", { name: fields.title }) });
+  await expect(card).toHaveCount(1);
+  await expect(card.getByRole("link", { name: fields.title })).toBeVisible();
+  await expect(card.getByText(fields.excerpt)).toBeVisible();
   await expect(page.getByText(draftExcerpt)).toHaveCount(0);
 });
 

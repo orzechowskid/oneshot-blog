@@ -13,6 +13,10 @@ const stories = [
   { id: "components-postcard--long-title", name: "post-card-long-title" },
   { id: "components-markdowncontent--article", name: "markdown-content-article" },
   { id: "components-formerrorsummary--errors", name: "form-error-summary-errors" },
+  { id: "components-markdowneditor--wide-screen", name: "markdown-editor-wide-screen" },
+  { id: "components-markdowneditor--narrow-screen", name: "markdown-editor-narrow-screen" },
+  { id: "components-markdowneditor--long-body", name: "markdown-editor-long-body" },
+  { id: "components-markdowneditor--empty-preview", name: "markdown-editor-empty-preview" },
 ];
 
 for (const story of stories) {

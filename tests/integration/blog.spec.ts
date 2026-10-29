@@ -32,11 +32,33 @@ async function expectNoA11yViolations(page: Page, path: string): Promise<void> {
 }
 
 test("home page shows the empty state before any posts exist", async ({ page }) => {
+  // The database is reset once per run, and the spec files that run
+  // before this one (adminlist, autosave) leave posts behind. Delete
+  // every row through the admin UI so the test checks the empty state
+  // regardless of what they created.
+  await login(page);
+  const rows = page.locator("tbody > tr");
+  const emptyList = page.getByText("No posts yet. Create the first one.");
+  for (let guard = 0; guard < 20; guard += 1) {
+    await page.goto("/admin");
+    if ((await rows.count()) === 0) {
+      break;
+    }
+    // Open the first row's editor and delete the post. The Delete post
+    // control submits the delete intent; the app confirms the delete by
+    // redirecting to the admin list without the row.
+    await rows.first().getByRole("link", { name: "Edit" }).click();
+    await page.getByRole("button", { name: "Delete post" }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+  }
+  await expect(emptyList).toBeVisible();
+
   await page.goto("/");
   await expect(
     page.getByRole("heading", { level: 1, name: "One Shot Blog" }),
   ).toBeVisible();
   await expect(page.getByText("No posts have been published yet.")).toBeVisible();
+  await expect(page.locator('a[href^="/posts/"]')).toHaveCount(0);
 });
 
 test("the owner can log in and create a published post", async ({ page }) => {
