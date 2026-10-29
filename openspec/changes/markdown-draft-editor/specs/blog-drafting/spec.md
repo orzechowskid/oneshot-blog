@@ -88,6 +88,10 @@ The system SHALL save a draft when the owner chooses **Save draft**. The system 
 - **WHEN** an automatic save fails
 - **THEN** the editor shows an error and keeps the draft marked unsaved
 
+#### Scenario: Autosave with an expired session
+- **WHEN** an automatic save is attempted and the session has expired
+- **THEN** the response reports an unauthenticated failure, the editor shows the failed-to-save state, and the draft text the owner typed is kept on screen
+
 #### Scenario: The editor shows the save states
 - **WHEN** a draft save is in progress, succeeds, leaves unsaved changes, or fails
 - **THEN** the editor shows the matching state: saving, saved, unsaved, or failed to save
@@ -113,6 +117,10 @@ The system SHALL make a draft the published content only when the owner chooses 
 #### Scenario: First publication
 - **WHEN** the owner publishes a draft-only post with a non-empty body
 - **THEN** the post becomes visible on the public site at the address the draft holds, the first publication time is recorded, and the draft is cleared
+
+#### Scenario: Publishing a draft-only post publishes the stored values
+- **WHEN** the owner publishes a draft-only post
+- **THEN** the content, the address, and the excerpt already stored on that row are the values that become public, and no value is taken from an empty draft field
 
 #### Scenario: Republishing a published post with a draft
 - **WHEN** the owner publishes a draft attached to an already published post
@@ -216,6 +224,10 @@ Draft saves SHALL require a title and SHALL allow an empty body. Publishing SHAL
 #### Scenario: A draft save whose address is taken appends a numeric suffix
 - **WHEN** the owner saves a draft whose address is already taken by another post
 - **THEN** the system appends a numeric suffix to the address, the draft is saved, and the editor shows the resulting address
+
+#### Scenario: A draft save that cannot obtain a free address is rejected
+- **WHEN** a draft save cannot obtain a free address because the collision attempts are exhausted
+- **THEN** the save is rejected with an address error naming the address, and no server error is shown to the owner
 
 #### Scenario: A published post ignores a submitted address
 - **WHEN** a save or publish for a published post includes an address value that differs from the post's current address
