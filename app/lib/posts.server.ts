@@ -104,12 +104,6 @@ async function resolveSlugResult(
   };
 }
 
-async function resolveSlug(base: string, excludeId?: string): Promise<string> {
-  const resolution = await resolveSlugResult(base, excludeId);
-  if (resolution.kind === "available") return resolution.slug;
-  throw new Error("Could not find an available slug.");
-}
-
 type LifecycleRow = {
   id: string;
   slug: string;
@@ -184,6 +178,18 @@ function toLifecycleResult(
   };
 }
 
+// The status of a post after a guarded write matched no row: the read
+// before the write saw a draft, so the row was published, or deleted,
+// in the gap. Null means the post is gone (a not found); a status means
+// the state change the caller reports as a field message.
+async function currentStatus(id: string): Promise<PostStatus | null> {
+  const result = await getPool().query<{ status: PostStatus }>(
+    "SELECT status FROM posts WHERE id = $1",
+    [id],
+  );
+  return result.rows[0]?.status ?? null;
+}
+
 export async function listPublishedPosts(): Promise<PostSummary[]> {
   await ensureSchema();
   const result = await getPool().query<PostSummary>(
@@ -231,26 +237,34 @@ export async function getPost(id: string): Promise<PostWithDraft | null> {
   return result.rows[0] ?? null;
 }
 
-export async function createPost(input: PostInput): Promise<Post> {
+export async function createPost(
+  input: PostInput,
+): Promise<PostLifecycleResult | null> {
   await ensureSchema();
-  const slug = await resolveSlug(input.slug);
-  const result = await getPool().query<Post>(
-    `INSERT INTO posts (slug, title, body_markdown, excerpt, status, published_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, slug, title, excerpt, status, published_at, updated_at,
-               body_markdown, created_at`,
-    [
-      slug,
-      input.title,
-      input.body,
-      input.excerpt,
-      input.published ? "published" : "draft",
-      input.published ? new Date() : null,
-    ],
+  // The write goes through the all-row collision check, so an address
+  // collision ends in a field message naming the address, never a server
+  // error.
+  const outcome = await writeWithSlugCollisionHandling(
+    input.slug,
+    undefined,
+    (slug) =>
+      getPool()
+        .query<LifecycleRow>(
+          `INSERT INTO posts (slug, title, body_markdown, excerpt, status, published_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, slug, title, status, updated_at AS saved_at`,
+          [
+            slug,
+            input.title,
+            input.body,
+            input.excerpt,
+            input.published ? "published" : "draft",
+            input.published ? new Date() : null,
+          ],
+        )
+        .then((result) => result.rows[0] ?? null),
   );
-  const post = result.rows[0];
-  if (!post) throw new Error("Post insert failed.");
-  return post;
+  return toLifecycleResult(outcome);
 }
 
 export async function createDraft(
@@ -304,6 +318,9 @@ export async function saveDraft(
     };
   }
 
+  // The status guard keeps a save that races a publish from writing this
+  // draft's title, body, excerpt, and address onto a row that is now
+  // published.
   const outcome = await writeWithSlugCollisionHandling(input.slug, id, (slug) =>
     getPool()
       .query<LifecycleRow>(
@@ -313,13 +330,25 @@ export async function saveDraft(
              body_markdown = $3,
              excerpt = $4,
              updated_at = now()
-         WHERE id = $5
+         WHERE id = $5 AND status = 'draft'
          RETURNING id, slug, title, status, updated_at AS saved_at`,
         [slug, input.title, input.body, input.excerpt, id],
       )
       .then((result) => result.rows[0] ?? null),
   );
-  return toLifecycleResult(outcome);
+  const result = toLifecycleResult(outcome);
+  if (result) return result;
+  // The guarded write matched no row: the post was published, or deleted,
+  // while the save was in flight. A published post keeps its published
+  // content; the save is reported as a field message, not a server error.
+  const status = await currentStatus(id);
+  if (!status) return null;
+  return {
+    saved: false,
+    fieldErrors: {
+      form: "The post was published before this save reached it. The draft was not saved.",
+    },
+  };
 }
 
 export async function publishPost(
@@ -330,6 +359,8 @@ export async function publishPost(
   if (!existing) return null;
 
   if (existing.status === "draft") {
+    // The status guard keeps a publish that races another publish from
+    // writing the row a second time.
     const result = await getPool().query<LifecycleRow>(
       `UPDATE posts
        SET status = 'published',
@@ -339,12 +370,25 @@ export async function publishPost(
            draft_body_markdown = NULL,
            draft_excerpt = NULL,
            draft_updated_at = NULL
-       WHERE id = $1
+       WHERE id = $1 AND status = 'draft'
        RETURNING id, slug, title, status, updated_at AS saved_at`,
       [id],
     );
     const row = result.rows[0];
-    if (!row) return null;
+    if (!row) {
+      // The guarded write matched no row: the post was published by a
+      // concurrent publish, or deleted, while this publish was in flight.
+      // The state change is reported as a field message, not a server
+      // error.
+      const status = await currentStatus(id);
+      if (!status) return null;
+      return {
+        saved: false,
+        fieldErrors: {
+          form: "The post was published before this publish reached it. Nothing was changed.",
+        },
+      };
+    }
     return {
       saved: true,
       id: row.id,

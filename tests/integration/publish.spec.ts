@@ -188,6 +188,48 @@ test("Publishing a draft-only post publishes the stored values", async ({ page }
   await expect(card.getByText(fields.excerpt)).toBeVisible();
 });
 
+test("Publish writes the validated content in the same request", async ({
+  page,
+}) => {
+  const fields: PostFields = {
+    title: "Immediate publish post",
+    slug: "immediate-publish-post",
+    body: "",
+    excerpt: "Immediate publish excerpt.",
+  };
+  // The body typed into the editor after the empty-body draft save. It is
+  // published before the three-second autosave can store it, so the
+  // publish request itself must store it.
+  const typedBody = "Immediately typed body with a **typed** marker.";
+  await login(page);
+
+  // Save a draft-only post with an empty body: the spec accepts a draft
+  // with a title and an empty body.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await saveDraft(page);
+
+  // Type a body and publish immediately, within the three-second idle
+  // window, so no autosave has stored the typed text.
+  await page.getByLabel("Body").fill(typedBody);
+  await publish(page);
+  // The "Post saved." confirmation was already on screen from the draft
+  // save, so wait for the loader re-render: a published post shows the
+  // address as a read-only control that is no longer part of the form.
+  await expect(page.locator('input[name="slug"]')).toHaveCount(0);
+
+  // The public post at the stored address shows the typed body, not the
+  // stored empty body.
+  await page.goto(`/posts/${fields.slug}`);
+  await expect(
+    page.getByRole("heading", { level: 1, name: fields.title }),
+  ).toBeVisible();
+  // The rendered body carries the typed text; the marker is rendered as
+  // strong, so assert the surrounding text and the strong separately.
+  await expect(page.getByText("Immediately typed body with a")).toBeVisible();
+  await expect(page.locator("strong")).toHaveText("typed");
+});
+
 test("Republishing a published post with a draft", async ({ page }) => {
   const fields: PostFields = {
     title: "Republish post",

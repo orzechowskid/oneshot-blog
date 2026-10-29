@@ -35,10 +35,16 @@ export type PostFormProps = {
   revision?: string;
 };
 
+// The fields app/routes/admin-autosave.tsx returns for a saved draft.
+// `status` is "draft" or "published"; a saved draft on a published row
+// means the draft is attached to it.
 type AutosaveResponse = {
   error?: string;
   id?: string;
   slug?: string;
+  title?: string;
+  status?: string;
+  saved_at?: string;
   fieldErrors?: Record<string, string>;
 };
 
@@ -83,6 +89,17 @@ export function PostForm({
   // The values of the last successful save; the form is dirty while any
   // field differs from these.
   const [savedValues, setSavedValues] = useState<PostFormValues>(values);
+  // Set when an autosave stores a draft on a published row. The loader
+  // values isPublished and hasDraft change only when an explicit
+  // submission re-runs the loader; an autosave is a fetch and never does,
+  // so the Publish and Discard draft controls read this flag until the
+  // next explicit submission refreshes the loader values.
+  const [draftAttached, setDraftAttached] = useState(false);
+  // Set while the latest preview request has failed. The status region
+  // then says the preview is not up to date and that saving refreshes it.
+  // Cleared when the next body change schedules a fresh preview request;
+  // re-set if that request fails too.
+  const [previewStale, setPreviewStale] = useState(false);
 
   const initialIdRef = useRef<string | null>(id ?? null);
   const autosaveSeqRef = useRef(0);
@@ -93,6 +110,10 @@ export function PostForm({
   const explicitInFlight =
     navigation.state === "submitting" || navigation.state === "loading";
   const anySaveInFlight = autosaveInFlight || explicitInFlight;
+  // Mirrors explicitInFlight for reads inside the autosave timer, where
+  // the value captured in the timer's closure would be stale.
+  const explicitInFlightRef = useRef(explicitInFlight);
+  explicitInFlightRef.current = explicitInFlight;
 
   // Set while an explicit form submission is in flight. Autosave is a
   // fetch and never changes the navigation state, so only explicit
@@ -131,6 +152,8 @@ export function PostForm({
     setBody(values.body);
     setExcerpt(values.excerpt);
     setSavedValues(values);
+    // The loader values are fresh again, so the autosave marker is stale.
+    setDraftAttached(false);
   }, [revision, values]);
 
   const dirty =
@@ -138,6 +161,10 @@ export function PostForm({
     slug !== savedValues.slug ||
     body !== savedValues.body ||
     excerpt !== savedValues.excerpt;
+
+  // A draft is attached when the loader says so, or when an autosave
+  // stored one on this published row since the loader last ran.
+  const hasAttachedDraft = hasDraft || draftAttached;
 
   const shownErrors = { ...errors, ...autosaveFieldErrors };
 
@@ -205,6 +232,12 @@ export function PostForm({
         });
         setSaveFailed(false);
         setAutosaveFieldErrors({});
+        if (data.status === "published") {
+          // The save stored a draft on a published row: the Publish and
+          // Discard draft controls read the marker until an explicit
+          // submission re-runs the loader with fresh values.
+          setDraftAttached(true);
+        }
         if (initialIdRef.current === null) {
           // First save on a new post: a reload continues this post instead
           // of starting a second draft.
@@ -266,7 +299,10 @@ export function PostForm({
   }, []);
 
   // Autosave after three seconds with no further change, only while the form
-  // is dirty and a title is present. Each change resets the timer.
+  // is dirty and a title is present. Each change resets the timer. The
+  // timer does not start or fire while an explicit submission is in
+  // flight, so a pending autosave cannot race an explicit save for the
+  // same row.
   useEffect(() => {
     const isDirty =
       title !== savedValues.title ||
@@ -275,11 +311,13 @@ export function PostForm({
       excerpt !== savedValues.excerpt;
     if (!isDirty) return;
     if (!title.trim()) return;
+    if (explicitInFlight) return;
     const timer = window.setTimeout(() => {
+      if (explicitInFlightRef.current) return;
       void runAutosave();
     }, AUTOSAVE_IDLE_MS);
     return () => window.clearTimeout(timer);
-  }, [title, slug, body, excerpt, savedValues, runAutosave]);
+  }, [title, slug, body, excerpt, savedValues, explicitInFlight, runAutosave]);
 
   const clearFieldError = useCallback((field: string) => {
     setAutosaveFieldErrors((prev) => {
@@ -300,10 +338,20 @@ export function PostForm({
     clearFieldError("slug");
   };
 
+  const handlePreviewFailed = useCallback(() => {
+    // The latest preview request failed. The preview shows the last
+    // successful render, which is older than the body.
+    setPreviewStale(true);
+  }, []);
+
   const handleBodyChange = useCallback(
     (next: string) => {
       setBody(next);
       clearFieldError("body");
+      // The new body schedules a fresh preview request, so the stale
+      // preview note no longer applies. It is re-set if the new request
+      // fails.
+      setPreviewStale(false);
     },
     [clearFieldError],
   );
@@ -378,6 +426,7 @@ export function PostForm({
         onBodyChange={handleBodyChange}
         initialPreviewHtml={initialPreviewHtml}
         label="Body"
+        onPreviewFailed={handlePreviewFailed}
       />
 
       <div className={fieldStyles.field}>
@@ -402,6 +451,12 @@ export function PostForm({
 
       <p className={fieldStyles.description} role="status" aria-live="polite">
         {SAVE_STATE_TEXT[saveState]}
+        {/* The note is withheld while a save has failed: the alert region
+            already names that failure, and saving cannot refresh the
+            preview while saves fail. */}
+        {previewStale && saveState !== "failed"
+          ? " Preview not up to date. Save to refresh the preview."
+          : null}
       </p>
 
       {saveError ? (
@@ -423,11 +478,11 @@ export function PostForm({
           type="submit"
           name="intent"
           value="publish"
-          isDisabled={anySaveInFlight || (isPublished && !hasDraft)}
+          isDisabled={anySaveInFlight || (isPublished && !hasAttachedDraft)}
         >
           Publish
         </Button>
-        {isPublished && hasDraft ? (
+        {isPublished && hasAttachedDraft ? (
           <Button
             type="submit"
             name="intent"

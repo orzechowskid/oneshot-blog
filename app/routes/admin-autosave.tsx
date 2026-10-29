@@ -103,9 +103,23 @@ export async function action({ request }: ActionFunctionArgs) {
     );
   }
   if (!result.saved) {
-    // The 50-attempt collision cap: a field error, never a server error.
+    if (result.fieldErrors.form) {
+      // The status guard did not apply: the row was published, or
+      // deleted, while the save was in flight. A conflict, like the
+      // concurrent-save conflict below: the editor shows the error and
+      // keeps the draft marked unsaved.
+      return Response.json(
+        { error: "The post changed elsewhere; reload and try again." },
+        { status: 409 },
+      );
+    }
+    // The 50-attempt collision cap: a field error naming the address the
+    // form held, never a server error.
     return Response.json(
-      { error: "The draft was not saved.", fieldErrors: result.fieldErrors },
+      {
+        error: "The draft was not saved.",
+        fieldErrors: { slug: `The address '${values.slug}' is taken.` },
+      },
       { status: 400 },
     );
   }

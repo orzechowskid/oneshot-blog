@@ -39,6 +39,26 @@ function notFound(): never {
   throw new Response("Not Found", { status: 404 });
 }
 
+// The message for a mutation whose status guard did not apply: the row
+// changed (published, or deleted) while the request was in flight.
+const STALE_ROW_MESSAGE = "The post changed elsewhere; reload and try again.";
+
+// The answer for that conflict on this route: a navigate request is
+// redirected back to the edit page with the message in the named query
+// parameter, a fetch request gets 409 JSON. The same split the publish
+// guard in the publish intent uses.
+function conflict(
+  request: Request,
+  param: "publishError" | "saveError",
+  id: string,
+  message: string,
+): Response {
+  if ((request.headers.get("sec-fetch-mode") ?? "") === "navigate") {
+    return redirect(`/admin/${id}/edit?${param}=${encodeURIComponent(message)}`);
+  }
+  return Response.json({ error: message }, { status: 409 });
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireUser(request);
 
@@ -73,6 +93,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     saved: url.searchParams.get("saved") === "1",
     imageUploaded: url.searchParams.get("imageUploaded") === "1",
     publishError: url.searchParams.get("publishError"),
+    saveError: url.searchParams.get("saveError"),
   };
 }
 
@@ -148,10 +169,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
     if (!result) notFound();
     if (!result.saved) {
-      // The 50-attempt address cap: a field error, never a server error.
+      if (result.fieldErrors.form) {
+        // The status guard did not apply: the row was published while the
+        // save was in flight. The redirect carries the message.
+        return conflict(request, "saveError", id, STALE_ROW_MESSAGE);
+      }
+      // The 50-attempt address cap: a field error naming the address the
+      // form held, never a server error.
       return data(
         {
-          errors: { form: "The draft was not saved.", ...result.fieldErrors },
+          errors: {
+            form: "The draft was not saved.",
+            slug: `The address '${values.slug}' is taken.`,
+          },
           values,
         },
         { status: 400 },
@@ -182,10 +212,56 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return data({ errors, values }, { status: 400 });
     }
 
-    // publishPost keeps the stored address on both branches; the
-    // address never changes on publish (D1).
+    // Publish writes the content it validated in this request. The
+    // stored row may hold an older value than the form (the three-second
+    // autosave has not fired), so promoting the row alone would publish
+    // the stored value, not the validated one. The call below is the
+    // same one the save-draft intent uses.
+    const saved = await saveDraft(id, {
+      title: values.title,
+      slug: values.slug,
+      body: values.body,
+      excerpt: values.excerpt,
+    });
+    if (!saved) notFound();
+    if (!saved.saved) {
+      if (saved.fieldErrors.form) {
+        // The status guard did not apply: the row was published while the
+        // publish was in flight. The redirect carries the message.
+        return conflict(request, "publishError", id, STALE_ROW_MESSAGE);
+      }
+      // The 50-attempt address cap: a field error naming the address the
+      // form held, never a server error.
+      return data(
+        {
+          errors: {
+            form: "The post was not published.",
+            slug: `The address '${values.slug}' is taken.`,
+          },
+          values,
+        },
+        { status: 400 },
+      );
+    }
+
+    // publishPost writes no slug, so the stored address is kept (D1).
     const result = await publishPost(id);
-    if (!result) notFound();
+    if (!result) {
+      if (saved.status === "published") {
+        // The published-row guard did not apply: a concurrent Discard
+        // draft cleared the draft while this publish was in flight. The
+        // row is gone only if the post is.
+        const current = await getPost(id);
+        if (!current) notFound();
+        return conflict(request, "publishError", id, STALE_ROW_MESSAGE);
+      }
+      notFound();
+    }
+    if (!result.saved) {
+      // The draft-row guard did not apply: a concurrent publish won the
+      // race. The redirect carries the message.
+      return conflict(request, "publishError", id, STALE_ROW_MESSAGE);
+    }
     return redirect(`/admin/${id}/edit?saved=1`);
   }
 
@@ -228,6 +304,7 @@ export default function AdminEditRoute() {
     saved,
     imageUploaded,
     publishError,
+    saveError,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
@@ -259,6 +336,11 @@ export default function AdminEditRoute() {
       {publishError ? (
         <p className={styles.imageError} role="alert">
           {publishError}
+        </p>
+      ) : null}
+      {saveError ? (
+        <p className={styles.imageError} role="alert">
+          {saveError}
         </p>
       ) : null}
 

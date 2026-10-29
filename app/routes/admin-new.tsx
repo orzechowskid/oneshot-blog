@@ -52,12 +52,13 @@ export async function action({ request }: ActionFunctionArgs) {
       excerpt: values.excerpt,
     });
     if (!result || !result.saved) {
-      // The 50-attempt address cap: a field error, never a server error.
+      // The 50-attempt address cap: a field error naming the address the
+      // form held, never a server error.
       return data(
         {
           errors: {
             form: "The draft was not saved.",
-            ...(result?.fieldErrors ?? {}),
+            slug: `The address '${values.slug}' is taken.`,
           },
           values,
         },
@@ -77,14 +78,28 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // The row is created already published and keeps the address the form
     // holds (with the numeric suffix on a collision, as before).
-    const post = await createPost({
+    const result = await createPost({
       title: values.title,
       slug: values.slug,
       body: values.body,
       excerpt: values.excerpt,
       published: true,
     });
-    return redirect(`/admin/${post.id}/edit?saved=1`);
+    if (!result || !result.saved) {
+      // The 50-attempt address cap: a field error naming the address the
+      // form held, never a server error.
+      return data(
+        {
+          errors: {
+            form: "The post was not published.",
+            slug: `The address '${values.slug}' is taken.`,
+          },
+          values,
+        },
+        { status: 400 },
+      );
+    }
+    return redirect(`/admin/${result.id}/edit?saved=1`);
   }
 
   // No plain submit and no default branch: a mutation with no intent
