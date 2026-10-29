@@ -238,6 +238,18 @@ export default function AdminEditRoute() {
   const imageError =
     actionData && "imageError" in actionData ? actionData.imageError : undefined;
 
+  // Changes when an accepted save, publish, or discard re-runs this loader;
+  // stays put on a rejected submission (action data) and on autosaves
+  // (fetches). The draft save time, or the row save time for a draft-only
+  // post, is what tells two saves of the same state apart. PostForm
+  // re-seeds its fields from the loader values when it changes.
+  const revision = [
+    post.id,
+    post.status,
+    hasDraft,
+    post.draft_updated_at ?? post.updated_at,
+  ].join("|");
+
   return (
     <section className={styles.page}>
       <h1>Edit post</h1>
@@ -259,6 +271,7 @@ export default function AdminEditRoute() {
         id={post.id}
         isPublished={isPublished}
         hasDraft={hasDraft}
+        revision={revision}
       />
 
       <div className={styles.section}>

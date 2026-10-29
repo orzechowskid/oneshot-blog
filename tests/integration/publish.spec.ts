@@ -1,0 +1,402 @@
+import { expect, test, type Page } from "@playwright/test";
+
+// Publishing scenarios from
+// openspec/changes/markdown-draft-editor/specs/blog-drafting/spec.md
+// ("Publishing promotes the draft", "Public posts expose only published
+// content", "Publication state changes only through Publish"), one test per
+// scenario, named after the scenario. Time assertions are read from the
+// public post page and the admin list, never from the database.
+//
+// A rejected publish submitted through the form answers with the editor
+// page and an alert carrying the conflict message (the edit action
+// branches on a navigate fetch), so the conflict test asserts the visible
+// message, not a raw JSON status. Where the "Post saved." confirmation is
+// already on screen from a previous save, the publish or draft-save waits
+// for a loader re-render signal instead: the address control drops out of
+// the form when a post becomes published, and the Discard draft control
+// appears when a draft attaches and disappears when it clears.
+
+const OWNER_EMAIL = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
+const OWNER_PASSWORD =
+  process.env.BOOTSTRAP_PASSWORD ?? "test-owner-password";
+
+// The conflict message the editor action shows when a publish request
+// arrives for a published row with no attached draft.
+const PUBLISH_CONFLICT_MESSAGE =
+  "The post is already published and has no draft to publish.";
+
+// The admin list and the public post page format dates with the same
+// en-US UTC formatter as app/lib/format.ts, so the test formats its own
+// "today" the same way and compares readable date strings.
+function readableDate(value: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(value);
+}
+
+async function login(page: Page): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(OWNER_EMAIL);
+  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page).toHaveURL(/\/admin/);
+}
+
+type PostFields = {
+  title: string;
+  slug: string;
+  body: string;
+  excerpt: string;
+};
+
+async function fillPostForm(page: Page, fields: PostFields): Promise<void> {
+  await page.getByLabel("Title").fill(fields.title);
+  await page.getByLabel("Slug").fill(fields.slug);
+  await page.getByLabel("Body").fill(fields.body);
+  await page.getByLabel("Excerpt").fill(fields.excerpt);
+}
+
+async function saveDraft(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Post saved.")).toBeVisible();
+}
+
+async function publish(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(page.getByText("Post saved.")).toBeVisible();
+}
+
+// After a save the editor URL is /admin/<id>/edit?saved=1.
+function editPostId(page: Page): string {
+  const id = page.url().match(/\/admin\/([0-9a-f-]+)\/edit/)?.[1] ?? "";
+  expect(id, `Expected an edit URL, got ${page.url()}`).not.toBe("");
+  return id;
+}
+
+type PageTime = { text: string; iso: string };
+
+// The public post page renders exactly one <time>: the first publication
+// time (published_at, falling back to updated_at).
+async function publicPostTime(page: Page, slug: string): Promise<PageTime> {
+  await page.goto(`/posts/${slug}`);
+  const time = page.locator("time");
+  await expect(time).toHaveCount(1);
+  return {
+    text: (await time.textContent())?.trim() ?? "",
+    iso: (await time.getAttribute("dateTime")) ?? "",
+  };
+}
+
+// The admin list row for a post; its <time> element is the post's last
+// change.
+function adminRow(page: Page, title: string) {
+  return page.getByRole("row", { name: title });
+}
+
+test("First publication", async ({ page }) => {
+  const fields: PostFields = {
+    title: "First publication post",
+    slug: "first-publication-post",
+    body: "First publication body. **Kept** marker.",
+    excerpt: "First publication excerpt.",
+  };
+  await login(page);
+
+  // Save the new post as a draft-only post: it is not public yet.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await saveDraft(page);
+
+  const draftNotPublic = await page.request.get(`/posts/${fields.slug}`);
+  expect(draftNotPublic.status()).toBe(404);
+
+  // Publish the draft-only post from the editor.
+  await publish(page);
+  // The "Post saved." confirmation was already on screen from the draft
+  // save, so wait for the loader re-render: a published post shows the
+  // address as a read-only control that is no longer part of the form.
+  await expect(page.locator('input[name="slug"]')).toHaveCount(0);
+
+  // The post is visible on the public site at the address the draft held,
+  // and the first publication time is recorded as today's date.
+  const first = await publicPostTime(page, fields.slug);
+  await expect(
+    page.getByRole("heading", { level: 1, name: fields.title }),
+  ).toBeVisible();
+  await expect(page.locator("strong")).toHaveText("Kept");
+  expect(first.text).toBe(readableDate(new Date()));
+
+  // The draft is cleared: the admin list shows the post as published with
+  // no attached draft, and the editor offers no discard control.
+  await page.goto("/admin");
+  const row = adminRow(page, fields.title);
+  await expect(row.getByText("Published", { exact: true })).toBeVisible();
+  await row.getByRole("link", { name: "Edit" }).click();
+  await expect(page.getByRole("button", { name: "Discard draft" })).toHaveCount(0);
+});
+
+test("Publishing a draft-only post publishes the stored values", async ({ page }) => {
+  const fields: PostFields = {
+    title: "Stored values post",
+    slug: "stored-values-post",
+    body: "Stored body content. **Stored** marker.",
+    excerpt: "Stored excerpt text.",
+  };
+  await login(page);
+
+  // Save the draft-only post; the editor then opens with the stored values.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await saveDraft(page);
+
+  // Publish without changing any field. The draft-only row has no attached
+  // draft, so the content, address, and excerpt already stored on the row
+  // are the values that become public, and no value is taken from an empty
+  // draft field.
+  await publish(page);
+  // The "Post saved." confirmation was already on screen from the draft
+  // save, so wait for the loader re-render: a published post shows the
+  // address as a read-only control that is no longer part of the form.
+  await expect(page.locator('input[name="slug"]')).toHaveCount(0);
+
+  // The stored content is public at the stored address.
+  const published = await publicPostTime(page, fields.slug);
+  await expect(
+    page.getByRole("heading", { level: 1, name: fields.title }),
+  ).toBeVisible();
+  await expect(page.locator("strong")).toHaveText("Stored");
+  expect(published.text).toBe(readableDate(new Date()));
+
+  // The stored address is the public address, and the stored excerpt is the
+  // public excerpt in the listing.
+  await page.goto("/");
+  const link = page.getByRole("link", { name: fields.title });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", `/posts/${fields.slug}`);
+  await expect(page.getByText(fields.excerpt)).toBeVisible();
+});
+
+test("Republishing a published post with a draft", async ({ page }) => {
+  const fields: PostFields = {
+    title: "Republish post",
+    slug: "republish-post",
+    body: "First publication body. **First** marker.",
+    excerpt: "Republish excerpt.",
+  };
+  const draftBody = "Second publication body. **Second** marker.";
+  await login(page);
+
+  // First publication.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await saveDraft(page);
+  await publish(page);
+  // The "Post saved." confirmation was already on screen from the draft
+  // save, so wait for the loader re-render: a published post shows the
+  // address as a read-only control that is no longer part of the form.
+  await expect(page.locator('input[name="slug"]')).toHaveCount(0);
+
+  const first = await publicPostTime(page, fields.slug);
+
+  // The last publication time is the row's last change in the admin list.
+  await page.goto("/admin");
+  const row = adminRow(page, fields.title);
+  const firstLastChange = await row.locator("time").getAttribute("dateTime");
+  await row.getByRole("link", { name: "Edit" }).click();
+
+  // Attach a draft with the new content, then publish it.
+  await page.getByLabel("Body").fill(draftBody);
+  await saveDraft(page);
+  // Wait for the loader re-render: the draft is attached, so the Discard
+  // draft control appears.
+  await expect(
+    page.getByRole("button", { name: "Discard draft" }),
+  ).toBeVisible();
+  // Keep the two publication times apart by a readable margin so the
+  // "the last publication time moves" comparison cannot tie.
+  await page.waitForTimeout(1100);
+  await publish(page);
+  // Wait for the loader re-render: the draft is cleared, so the Discard
+  // draft control disappears.
+  await expect(
+    page.getByRole("button", { name: "Discard draft" }),
+  ).toHaveCount(0);
+
+  // The published content is replaced at the same address, and the first
+  // publication time stays unchanged.
+  const after = await publicPostTime(page, fields.slug);
+  await expect(page.locator("strong")).toHaveText("Second");
+  await expect(page.getByText("First marker", { exact: true })).toHaveCount(0);
+  expect(after.iso).toBe(first.iso);
+  expect(after.text).toBe(first.text);
+
+  // The draft is cleared and the last publication time moved in the admin
+  // list.
+  await page.goto("/admin");
+  const rowAfter = adminRow(page, fields.title);
+  await expect(rowAfter.getByText("Published", { exact: true })).toBeVisible();
+  const secondLastChange = await rowAfter.locator("time").getAttribute("dateTime");
+  // Both values are ISO strings from the same formatter; compare the
+  // instants they name.
+  expect(new Date(secondLastChange ?? "").getTime()).toBeGreaterThan(
+    new Date(firstLastChange ?? "").getTime(),
+  );
+});
+
+test("Publish is unavailable on a published post with no attached draft", async ({
+  page,
+}) => {
+  const fields: PostFields = {
+    title: "Publish guard post",
+    slug: "publish-guard-post",
+    body: "Guard body. **Guard** marker.",
+    excerpt: "Guard excerpt.",
+  };
+  await login(page);
+
+  // Publish a new post directly: the row is published with no attached
+  // draft, and the editor is open on it.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await publish(page);
+
+  // The Publish control is unavailable: no enabled Publish control exists.
+  await expect(
+    page.getByRole("button", { name: "Publish", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.locator('button[name="intent"][value="publish"]:enabled'),
+  ).toHaveCount(0);
+
+  // The server rejects a publish request for a published row with no
+  // attached draft with a conflict. A form submission answers with the
+  // editor page and the conflict message in an alert, so the test asserts
+  // the message the owner sees. The Publish control is disabled, so the
+  // submission re-enables it and clicks it.
+  const id = editPostId(page);
+  await page
+    .locator('button[name="intent"][value="publish"]')
+    .evaluate((el) => el.removeAttribute("disabled"));
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+
+  await expect(page.getByRole("alert")).toHaveText(PUBLISH_CONFLICT_MESSAGE);
+  expect(editPostId(page)).toBe(id);
+  expect(new URL(page.url()).searchParams.get("publishError")).toBe(
+    PUBLISH_CONFLICT_MESSAGE,
+  );
+
+  // The post is still public at its address, unchanged.
+  const published = await publicPostTime(page, fields.slug);
+  expect(published.text).toBe(readableDate(new Date()));
+  await expect(
+    page.getByRole("heading", { level: 1, name: fields.title }),
+  ).toBeVisible();
+});
+
+test("A reader sees published content, not the attached draft", async ({
+  page,
+}) => {
+  const fields: PostFields = {
+    title: "Draft attached post",
+    slug: "draft-attached-post",
+    body: "Published body with a **kept** marker.",
+    excerpt: "Published excerpt.",
+  };
+  const draftBody = "Draft body with a **hidden** marker.";
+  const draftExcerpt = "Draft excerpt that must stay hidden.";
+  await login(page);
+
+  // Publish the post, then attach a draft with different content.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await publish(page);
+
+  await page.getByLabel("Body").fill(draftBody);
+  await page.getByLabel("Excerpt").fill(draftExcerpt);
+  await saveDraft(page);
+  // The "Post saved." confirmation was already on screen from the
+  // publish, so wait for the loader re-render: the draft is attached, so
+  // the Discard draft control appears.
+  await expect(
+    page.getByRole("button", { name: "Discard draft" }),
+  ).toBeVisible();
+
+  // The admin list names the state.
+  await page.goto("/admin");
+  await expect(
+    adminRow(page, fields.title).getByText(
+      "Published with draft attached",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  // The public post page shows the published content, not the draft.
+  const response = await page.goto(`/posts/${fields.slug}`);
+  expect(response?.status()).toBe(200);
+  await expect(page.locator("strong")).toHaveText("kept");
+  await expect(page.getByText("hidden", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(draftExcerpt)).toHaveCount(0);
+
+  // The public listing shows the published excerpt, not the draft's.
+  await page.goto("/");
+  await expect(page.getByText(fields.excerpt)).toBeVisible();
+  await expect(page.getByText(draftExcerpt)).toHaveCount(0);
+});
+
+test("An address belonging to an unpublished draft is not found", async ({
+  page,
+}) => {
+  const fields: PostFields = {
+    title: "Unpublished draft post",
+    slug: "unpublished-draft-address",
+    body: "Draft body that is not public.",
+    excerpt: "Unpublished excerpt.",
+  };
+  await login(page);
+
+  // Save a draft-only post; its address belongs only to the draft.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await saveDraft(page);
+
+  // A public request for the address is not found.
+  const response = await page.goto(`/posts/${fields.slug}`);
+  expect(response?.status()).toBe(404);
+
+  // The post is absent from the public listing.
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: fields.title })).toHaveCount(0);
+});
+
+test("The admin editor shows no control that removes a published post", async ({
+  page,
+}) => {
+  const fields: PostFields = {
+    title: "No unpublish post",
+    slug: "no-unpublish-post",
+    body: "Always public body. **Public** marker.",
+    excerpt: "No unpublish excerpt.",
+  };
+  await login(page);
+
+  // Publish a new post directly; the editor is open on the published post.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await publish(page);
+
+  // No publish checkbox and no unpublish control of any kind.
+  await expect(page.locator('input[name="published"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /unpublish/i })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /unpublish/i })).toHaveCount(0);
+
+  // The remaining state controls are the draft controls only, and the post
+  // stays on the public site at its address.
+  await expect(page.getByRole("button", { name: "Save draft" })).toBeEnabled();
+  await expect(page.getByRole("link", { name: "View post" })).toBeVisible();
+  const response = await page.goto(`/posts/${fields.slug}`);
+  expect(response?.status()).toBe(200);
+  await expect(page.locator("strong")).toHaveText("Public");
+});

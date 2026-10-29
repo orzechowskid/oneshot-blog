@@ -28,6 +28,11 @@ export type PostFormProps = {
   id?: string;
   isPublished?: boolean;
   hasDraft?: boolean;
+  // Revision of the loader result that produced `values`. It changes when
+  // an accepted save, publish, or discard re-runs the route loader; the
+  // form re-seeds its fields from `values` when it changes after an
+  // explicit submission. Autosave is a fetch and never changes it.
+  revision?: string;
 };
 
 type AutosaveResponse = {
@@ -54,6 +59,7 @@ export function PostForm({
   id,
   isPublished = false,
   hasDraft = false,
+  revision,
 }: PostFormProps) {
   const titleId = useId();
   const slugId = useId();
@@ -87,6 +93,45 @@ export function PostForm({
   const explicitInFlight =
     navigation.state === "submitting" || navigation.state === "loading";
   const anySaveInFlight = autosaveInFlight || explicitInFlight;
+
+  // Set while an explicit form submission is in flight. Autosave is a
+  // fetch and never changes the navigation state, so only explicit
+  // submissions set it.
+  const explicitSubmitRef = useRef(false);
+  const prevNavigationStateRef = useRef(navigation.state);
+  // The revision of the loader result the fields were last seeded from.
+  const lastSeededRevisionRef = useRef(revision);
+
+  useEffect(() => {
+    if (
+      navigation.state === "submitting" &&
+      prevNavigationStateRef.current === "idle"
+    ) {
+      explicitSubmitRef.current = true;
+    }
+    prevNavigationStateRef.current = navigation.state;
+  }, [navigation.state]);
+
+  // After an explicit submission the server accepts, the redirect re-runs
+  // the loader and the route passes new values with a new revision.
+  // Re-seed the fields from them, so the form shows what the server now
+  // holds: the published content after a discarded draft, the promoted
+  // content after a publish. A rejected submission returns action data
+  // without re-running the loader, so the revision stays and the typed
+  // values are kept. Autosave changes neither the values nor the revision,
+  // so typing while a save is in flight is never reset.
+  useEffect(() => {
+    if (revision === undefined) return;
+    if (revision === lastSeededRevisionRef.current) return;
+    if (!explicitSubmitRef.current) return;
+    lastSeededRevisionRef.current = revision;
+    explicitSubmitRef.current = false;
+    setTitle(values.title);
+    setSlug(values.slug);
+    setBody(values.body);
+    setExcerpt(values.excerpt);
+    setSavedValues(values);
+  }, [revision, values]);
 
   const dirty =
     title !== savedValues.title ||
