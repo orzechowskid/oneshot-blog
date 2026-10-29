@@ -1,6 +1,5 @@
-import { Outlet, useLoaderData } from "react-router";
+import { Link, Outlet, useLoaderData } from "react-router";
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { Link } from "react-aria-components";
 import { requireUser } from "../lib/auth.server";
 import styles from "./admin.module.css";
 
@@ -19,10 +18,10 @@ export default function AdminLayout() {
       <div className={styles.headerRow}>
         <p>Signed in as {user.email}</p>
         <nav className={styles.nav} aria-label="Admin">
-          <Link href="/admin" className={styles.navLink}>
+          <Link to="/admin" className={styles.navLink}>
             All posts
           </Link>
-          <Link href="/admin/new" className={styles.navLink}>
+          <Link to="/admin/new" className={styles.navLink}>
             New post
           </Link>
         </nav>
