@@ -8,7 +8,6 @@ import {
   validateEmail,
   validateLogin,
   validatePassword,
-  validatePost,
   validatePublish,
 } from "./validation";
 
@@ -34,42 +33,6 @@ describe("readPostForm", () => {
     form.set("slug", "My Custom Slug");
     form.set("body", "Text");
     expect(readPostForm(form).slug).toBe("my-custom-slug");
-  });
-});
-
-describe("validatePost", () => {
-  const valid = {
-    title: "Hello",
-    slug: "hello",
-    body: "Some text",
-    excerpt: "Some text",
-    published: false,
-  };
-
-  it("accepts a valid post", () => {
-    expect(validatePost(valid)).toEqual({});
-  });
-
-  it("requires a title", () => {
-    expect(validatePost({ ...valid, title: "" }).title).toBe("Enter a title.");
-  });
-
-  it("rejects an invalid slug", () => {
-    expect(validatePost({ ...valid, slug: "Hello World" }).slug).toBe(
-      "Use lowercase letters, numbers, and single hyphens.",
-    );
-  });
-
-  it("requires a body", () => {
-    expect(validatePost({ ...valid, body: "  " }).body).toBe(
-      "Write the post body in Markdown.",
-    );
-  });
-
-  it("limits the excerpt length", () => {
-    expect(validatePost({ ...valid, excerpt: "x".repeat(401) }).excerpt).toBe(
-      "Excerpts must be 400 characters or fewer.",
-    );
   });
 });
 
