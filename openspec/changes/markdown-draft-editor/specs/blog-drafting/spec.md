@@ -192,11 +192,11 @@ Public post views SHALL show only the published content. Draft content SHALL NOT
 - **THEN** the post is served at its original public address
 
 ### Requirement: Publication state changes only through Publish
-The publication state of a post SHALL change only through the **Publish** action. The admin editor SHALL provide no control that takes a published post off the public site.
+The publication state of a post SHALL change only through the **Publish** action. No control on the admin editor SHALL take a published post off the public site by changing its publication state. Republishing a post SHALL keep it public at the same address. Removing a post from the public site SHALL remain available through the existing whole-post delete control.
 
-#### Scenario: The admin editor shows no control that removes a published post
+#### Scenario: The admin editor keeps the whole-post delete control
 - **WHEN** the owner opens the editor for a published post
-- **THEN** no control is shown that takes the post off the public site
+- **THEN** the whole-post delete control is shown, and no control is shown that takes the post off the public site by changing its publication state
 
 #### Scenario: A published post stays public until it is published again
 - **WHEN** a post is published
