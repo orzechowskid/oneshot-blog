@@ -47,8 +47,7 @@ test("the owner can log in and create a published post", async ({ page }) => {
   await page.getByLabel("Slug").fill("integration-test-post");
   await page.getByLabel("Body").fill("Hello **integration**.");
   await page.getByLabel("Excerpt").fill("A post from the integration test.");
-  await page.getByText("Publish this post").click();
-  await page.getByRole("button", { name: "Create post" }).click();
+  await page.getByRole("button", { name: "Publish" }).click();
 
   await expect(page.getByText("Post saved.")).toBeVisible();
   await expect(page).toHaveURL(/\/admin\/[0-9a-f-]+\/edit\?saved=1$/);
@@ -58,6 +57,38 @@ test("the owner can log in and create a published post", async ({ page }) => {
     page.getByRole("heading", { level: 1, name: "Integration test post" }),
   ).toBeVisible();
   await expect(page.locator("strong")).toHaveText("integration");
+
+  // The admin list shows the new post as published.
+  await page.goto("/admin");
+  const row = page.getByRole("row", { name: /Integration test post/ });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("Published", { exact: true })).toBeVisible();
+});
+
+test("the owner can save a draft and see it as a draft in the admin list", async ({ page }) => {
+  await login(page);
+
+  await page.goto("/admin/new");
+  await page.getByLabel("Title").fill("Draft test post");
+  await page.getByLabel("Slug").fill("draft-test-post");
+  await page.getByLabel("Body").fill("A body for the draft.");
+  await page.getByRole("button", { name: "Save draft" }).click();
+
+  await expect(page.getByText("Post saved.")).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/[0-9a-f-]+\/edit\?saved=1$/);
+
+  // The admin list shows the post as a draft, with no View control.
+  await page.goto("/admin");
+  const row = page.getByRole("row", { name: /Draft test post/ });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("Draft", { exact: true })).toBeVisible();
+  await expect(row.getByRole("link", { name: "View" })).toHaveCount(0);
+
+  // A draft-only post is not on the public site.
+  await page.goto("/");
+  await expect(
+    page.getByRole("link", { name: "Draft test post" }),
+  ).toHaveCount(0);
 });
 
 test("the owner can upload an image and use it in a post", async ({ page }) => {
@@ -67,7 +98,7 @@ test("the owner can upload an image and use it in a post", async ({ page }) => {
   await page.getByLabel("Title").fill("Image post");
   await page.getByLabel("Slug").fill("image-post");
   await page.getByLabel("Body").fill("An image follows.");
-  await page.getByRole("button", { name: "Create post" }).click();
+  await page.getByRole("button", { name: "Publish" }).click();
   await expect(page.getByText("Post saved.")).toBeVisible();
 
   await page.getByLabel("Image file").setInputFiles({
@@ -85,8 +116,11 @@ test("the owner can upload an image and use it in a post", async ({ page }) => {
   expect(snippet).toMatch(/!\[A black square\]\(\/images\/[0-9a-f-]+\)/);
 
   await page.getByLabel("Body").fill(`An image follows.\n\n${snippet}`);
-  await page.getByText("Publish this post").click();
-  await page.getByRole("button", { name: "Save post" }).click();
+  // Attach the draft explicitly, then publish it: the published content
+  // changes only through the Publish action.
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Post saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Publish" }).click();
   await expect(page.getByText("Post saved.")).toBeVisible();
 
   await page.getByRole("link", { name: "View post" }).click();
@@ -94,6 +128,15 @@ test("the owner can upload an image and use it in a post", async ({ page }) => {
     page.getByRole("heading", { level: 1, name: "Image post" }),
   ).toBeVisible();
   await expect(page.getByRole("img", { name: "A black square" })).toBeVisible();
+
+  // The owner can delete the uploaded image.
+  await page.goto("/admin");
+  await page
+    .getByRole("row", { name: /Image post/ })
+    .getByRole("link", { name: "Edit" })
+    .click();
+  await page.getByRole("button", { name: "Delete image" }).click();
+  await expect(page.getByText("No images uploaded for this post.")).toBeVisible();
 });
 
 test("invalid login shows an accessible error", async ({ page }) => {
