@@ -53,7 +53,15 @@ Affected and new files:
 - `app/routes/admin-index.tsx`
 - new `scripts/check-bundle-budget.ts`
 - `tests/integration/blog.spec.ts`, rewritten for the removed checkbox
-- new `tests/integration/drafts.spec.ts`
+- new `tests/integration/draft-editing.spec.ts`, `tests/integration/publish.spec.ts`, `tests/integration/autosave.spec.ts`, and `tests/integration/adminlist.spec.ts`
+- new `tests/unit/beforeunload.test.ts`, for the handler registration
 - `tests/storybook/visual.spec.ts` and `tests/storybook/accessibility.spec.ts`, for story registration
 
 No new runtime dependency is needed. `app/lib/markdown.ts` is not edited and stays out of the browser bundle. The public and login routes are not changed.
+
+## Limitations
+
+- The tab-close half of the unsaved-edits warning is unobservable in Chromium under Playwright: a closed tab cannot be inspected, so only the reload half is asserted in the integration suite.
+- tests/unit/beforeunload.test.ts asserts the source text of app/components/PostForm.tsx — the handler registration and its removal — not the browser behaviour; the repo's vitest runs in a node environment with no jsdom.
+- The editor shows a preview-failure message added in this phase: when a preview request fails, the status region reads "Preview not up to date. Save to refresh the preview." The spec does not name this message.
+- The admin nav links in app/routes/admin-layout.tsx now navigate through React Router, so following them from the editor is in-app navigation: no warning, and the unsaved edits are dropped (the explicit limit in the spec).
