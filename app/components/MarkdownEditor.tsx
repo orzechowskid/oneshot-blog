@@ -67,6 +67,17 @@ export function MarkdownEditor({
     };
   }, []);
 
+  // Re-seed the preview pane when the loader provides a new initial preview,
+  // e.g. after Discard draft swaps the form back to the published body.
+  // Bumping the request sequence marks any in-flight preview fetch for the
+  // previous content as stale, so the existing sequence guard drops its
+  // response. Owner keystrokes do not change this prop, so typing never
+  // re-runs this effect and the typed preview is not clobbered.
+  useEffect(() => {
+    requestSeqRef.current += 1;
+    setPreviewHtml(initialPreviewHtml);
+  }, [initialPreviewHtml]);
+
   const schedulePreview = useCallback((body: string) => {
     if (previewTimerRef.current !== null) {
       window.clearTimeout(previewTimerRef.current);

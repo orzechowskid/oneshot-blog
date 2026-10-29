@@ -251,6 +251,12 @@ test("Discard draft on a published post clears the draft and the public post sta
   await expect(page.getByLabel("Title")).toHaveValue("Discard post");
   await expect(page.getByLabel("Body")).toHaveValue("Discard **stays** live.");
 
+  // The preview pane shows the published body and no longer carries the
+  // discarded draft body marker.
+  const preview = page.getByLabel("Markdown preview");
+  await expect(preview).toContainText("Discard stays live.");
+  await expect(preview).not.toContainText("goes");
+
   // The admin list shows the post as published without an attached draft.
   await page.goto("/admin");
   const row = page.getByRole("row", { name: /Discard post/ });
