@@ -13,6 +13,8 @@ export default [
   route("login", "routes/login.tsx"),
   route("logout", "routes/logout.tsx"),
   route("internal/seed", "routes/seed.tsx"),
+  route("admin/preview", "routes/admin-preview.tsx"),
+  route("admin/autosave", "routes/admin-autosave.tsx"),
   layout("routes/admin-layout.tsx", [
     route("admin", "routes/admin-index.tsx"),
     route("admin/new", "routes/admin-new.tsx"),

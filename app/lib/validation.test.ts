@@ -4,10 +4,12 @@ import {
   readLoginForm,
   readPostForm,
   validateAltText,
+  validateDraftSave,
   validateEmail,
   validateLogin,
   validatePassword,
   validatePost,
+  validatePublish,
 } from "./validation";
 
 describe("readPostForm", () => {
@@ -172,5 +174,142 @@ describe("isUuid", () => {
 
   it("rejects non-UUID values", () => {
     expect(isUuid("not-a-uuid")).toBe(false);
+  });
+});
+
+describe("validateDraftSave", () => {
+  // Values for a new or draft-only post. The second argument of
+  // validateDraftSave is true when the target row is published, so the
+  // submitted address is ignored for it.
+  const draftOnlyValues = {
+    title: "Hello",
+    slug: "hello",
+    body: "",
+    excerpt: "",
+    published: false,
+  };
+
+  it("rejects a draft save without a title and shows no address error", () => {
+    expect(
+      validateDraftSave({ ...draftOnlyValues, title: "", slug: "post" }),
+    ).toEqual({
+      title: "Enter a title.",
+    });
+    expect(
+      validateDraftSave({ ...draftOnlyValues, title: "", slug: "" }),
+    ).toEqual({
+      title: "Enter a title.",
+    });
+  });
+
+  it("accepts a draft with a title and an empty body", () => {
+    expect(validateDraftSave(draftOnlyValues)).toEqual({});
+    expect(
+      validateDraftSave({ ...draftOnlyValues, body: "   " }).body,
+    ).toBeUndefined();
+  });
+
+  it("accepts a draft save whose address is derived from the title", () => {
+    const form = new FormData();
+    form.set("title", "Hello World");
+    form.set("body", "");
+    const values = readPostForm(form);
+    expect(values.slug).toBe("hello-world");
+    expect(validateDraftSave(values)).toEqual({});
+  });
+
+  it("applies the existing address rules to a new or draft-only post", () => {
+    expect(validateDraftSave({ ...draftOnlyValues, slug: "" }).slug).toBe(
+      "Enter a slug.",
+    );
+    expect(
+      validateDraftSave({ ...draftOnlyValues, slug: "a".repeat(101) }).slug,
+    ).toBe("Slugs must be 100 characters or fewer.");
+    expect(
+      validateDraftSave({ ...draftOnlyValues, slug: "Hello World" }).slug,
+    ).toBe("Use lowercase letters, numbers, and single hyphens.");
+  });
+
+  it("ignores a submitted address for a published post", () => {
+    expect(
+      validateDraftSave({ ...draftOnlyValues, slug: "Different Address" }, true),
+    ).toEqual({});
+  });
+
+  it("limits the title to 200 characters", () => {
+    expect(
+      validateDraftSave({ ...draftOnlyValues, title: "t".repeat(201) }).title,
+    ).toBe("Titles must be 200 characters or fewer.");
+  });
+
+  it("limits the body to 100,000 characters", () => {
+    expect(
+      validateDraftSave({ ...draftOnlyValues, body: "b".repeat(100_001) }).body,
+    ).toBe("Post bodies must be 100,000 characters or fewer.");
+  });
+
+  it("limits the excerpt to 400 characters", () => {
+    expect(
+      validateDraftSave({ ...draftOnlyValues, excerpt: "x".repeat(401) }).excerpt,
+    ).toBe("Excerpts must be 400 characters or fewer.");
+  });
+});
+
+describe("validatePublish", () => {
+  const newPostValues = {
+    title: "Hello",
+    slug: "hello",
+    body: "Some text",
+    excerpt: "Some text",
+    published: true,
+  };
+
+  it("accepts a valid publish", () => {
+    expect(validatePublish(newPostValues)).toEqual({});
+  });
+
+  it("rejects a publish with an empty body", () => {
+    expect(validatePublish({ ...newPostValues, body: "" }).body).toBe(
+      "Write the post body in Markdown.",
+    );
+    expect(validatePublish({ ...newPostValues, body: "   " }).body).toBe(
+      "Write the post body in Markdown.",
+    );
+  });
+
+  it("applies the existing address rules to a new or draft-only post", () => {
+    expect(validatePublish({ ...newPostValues, slug: "" }).slug).toBe(
+      "Enter a slug.",
+    );
+    expect(
+      validatePublish({ ...newPostValues, slug: "a".repeat(101) }).slug,
+    ).toBe("Slugs must be 100 characters or fewer.");
+    expect(
+      validatePublish({ ...newPostValues, slug: "Hello World" }).slug,
+    ).toBe("Use lowercase letters, numbers, and single hyphens.");
+  });
+
+  it("ignores a submitted address for a published post", () => {
+    expect(
+      validatePublish({ ...newPostValues, slug: "Different Address" }, true),
+    ).toEqual({});
+  });
+
+  it("limits the title to 200 characters", () => {
+    expect(
+      validatePublish({ ...newPostValues, title: "t".repeat(201) }).title,
+    ).toBe("Titles must be 200 characters or fewer.");
+  });
+
+  it("limits the body to 100,000 characters", () => {
+    expect(
+      validatePublish({ ...newPostValues, body: "b".repeat(100_001) }).body,
+    ).toBe("Post bodies must be 100,000 characters or fewer.");
+  });
+
+  it("limits the excerpt to 400 characters", () => {
+    expect(
+      validatePublish({ ...newPostValues, excerpt: "x".repeat(401) }).excerpt,
+    ).toBe("Excerpts must be 400 characters or fewer.");
   });
 });
