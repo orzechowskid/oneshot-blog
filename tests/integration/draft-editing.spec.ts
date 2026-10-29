@@ -248,9 +248,6 @@ test("Discard draft on a published post clears the draft and the public post sta
   await expect(page.getByText("Post saved.")).toBeVisible();
 
   // The editor shows the published content again: the draft is cleared.
-  // This currently fails: the field state keeps the discarded draft text
-  // after the in-app redirect (see report). Checked before any navigation,
-  // because a document reload re-reads the loader and hides the issue.
   await expect(page.getByLabel("Title")).toHaveValue("Discard post");
   await expect(page.getByLabel("Body")).toHaveValue("Discard **stays** live.");
 
@@ -343,4 +340,183 @@ test("a draft save with no title is rejected with a title error and no address e
 
   // The save was rejected in place, without navigation.
   await expect(page).toHaveURL(/\/admin\/new$/);
+});
+
+test("the preview shows the saved published content when the editor opens, before any preview request", async ({ page }) => {
+  await login(page);
+  const editPath = await createPublishedPost(page, {
+    title: "DE first paint post",
+    slug: "de-first-paint",
+    body: "DE first paint **rendered** on open.",
+    excerpt: "DE first paint excerpt.",
+  });
+
+  // Block the preview route before the editor loads, so the preview region
+  // cannot be filled by a preview response: whatever is shown on first
+  // paint came from the server render.
+  const previewRequests: string[] = [];
+  await page.route("**/admin/preview", (route) => {
+    previewRequests.push(route.request().url());
+    void route.abort();
+  });
+
+  await page.goto(editPath);
+  const preview = page.getByLabel("Markdown preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.getByRole("strong")).toHaveText("rendered");
+
+  // No preview request has run before the first paint shows the content.
+  expect(previewRequests).toEqual([]);
+});
+
+test("the toolbar buttons and keyboard shortcuts wrap the selected text in the body", async ({ page }) => {
+  await login(page);
+  const editPath = await createPublishedPost(page, {
+    title: "DE toolbar post",
+    slug: "de-toolbar",
+    body: "DE toolbar base body.",
+    excerpt: "DE toolbar excerpt.",
+  });
+
+  await page.goto(editPath);
+  const body = page.getByLabel("Body");
+  const base = "DE toolbar format base here.";
+
+  // The editor re-selects the wrapped text in a requestAnimationFrame
+  // after every format. Flush two frames before each new selection, so a
+  // stale re-selection from the previous cycle cannot land after this
+  // cycle's select-all and move the selection.
+  const settleFrames = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => resolve()),
+          ),
+        ),
+    );
+
+  // Selecting all keeps each cycle independent of the previous wrap.
+  const selectAll = async () => {
+    await settleFrames();
+    await body.fill(base);
+    await body.press("ControlOrMeta+a");
+  };
+
+  // Toolbar buttons wrap the selected text.
+  await selectAll();
+  await page.getByRole("button", { name: "Bold" }).click();
+  await expect(body).toHaveValue(`**${base}**`);
+
+  await selectAll();
+  await page.getByRole("button", { name: "Italic" }).click();
+  await expect(body).toHaveValue(`*${base}*`);
+
+  await selectAll();
+  await page.getByRole("button", { name: "Link" }).click();
+  await expect(body).toHaveValue(`[${base}](url)`);
+
+  await selectAll();
+  await page.getByRole("button", { name: "Inline code" }).click();
+  await expect(body).toHaveValue(`\`${base}\``);
+
+  // The keyboard shortcuts wrap the selected text the same way.
+  await selectAll();
+  await body.press("ControlOrMeta+b");
+  await expect(body).toHaveValue(`**${base}**`);
+
+  await selectAll();
+  await body.press("ControlOrMeta+i");
+  await expect(body).toHaveValue(`*${base}*`);
+
+  await selectAll();
+  await body.press("ControlOrMeta+k");
+  await expect(body).toHaveValue(`[${base}](url)`);
+
+  await selectAll();
+  await body.press("ControlOrMeta+e");
+  await expect(body).toHaveValue(`\`${base}\``);
+});
+
+test("in-app navigation with unsaved edits does not warn and the unsaved edits are dropped", async ({ page }) => {
+  await login(page);
+  const editPath = await createPublishedPost(page, {
+    title: "DE nav post",
+    slug: "de-nav",
+    body: "DE nav base body.",
+    excerpt: "DE nav excerpt.",
+  });
+
+  await page.goto(editPath);
+
+  let dialogSeen = false;
+  page.on("dialog", (dialog) => {
+    dialogSeen = true;
+    void dialog.dismiss();
+  });
+
+  // An unsaved change: the form is dirty, so the reload and tab-close
+  // warning is registered while it lives.
+  await page.getByLabel("Title").fill("DE nav unsaved title");
+
+  // In-app navigation does not warn and completes.
+  await page.getByRole("link", { name: "All posts" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  expect(dialogSeen).toBe(false);
+
+  // The unsaved edit is dropped: the list still shows the stored title.
+  await expect(page.getByRole("row", { name: /DE nav post/ })).toBeVisible();
+  await expect(page.getByText("DE nav unsaved title")).toHaveCount(0);
+});
+
+test("a draft-only post keeps its address when a later draft saves with the same address and gets a numeric suffix", async ({ page }) => {
+  await login(page);
+
+  // The first post is a draft-only post that takes the address.
+  await page.goto("/admin/new");
+  await page.getByLabel("Title").fill("DE draft owner post");
+  await page.getByLabel("Slug").fill("de-draft-collision");
+  await page.getByLabel("Body").fill("DE draft owner body.");
+  await page.getByLabel("Excerpt").fill("DE draft owner excerpt.");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Post saved.")).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/[0-9a-f-]+\/edit\?saved=1$/);
+  const firstEditPath = new URL(page.url()).pathname;
+
+  // A later draft saves with the same address: it is saved under a
+  // suffixed address.
+  await page.goto("/admin/new");
+  await page.getByLabel("Title").fill("DE draft collider post");
+  await page.getByLabel("Slug").fill("de-draft-collision");
+  await page.getByLabel("Body").fill("DE draft collider body.");
+  await page.getByLabel("Excerpt").fill("DE draft collider excerpt.");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Post saved.")).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/[0-9a-f-]+\/edit\?saved=1$/);
+  await expect(page.getByLabel("Slug")).toHaveValue("de-draft-collision-2");
+
+  // The original draft keeps its address.
+  await page.goto(firstEditPath);
+  await expect(page.getByLabel("Slug")).toHaveValue("de-draft-collision");
+});
+
+test("the draft-only editor shows no discard action and keeps the whole-post delete", async ({ page }) => {
+  await login(page);
+
+  await page.goto("/admin/new");
+  await page.getByLabel("Title").fill("DE no discard draft");
+  await page.getByLabel("Slug").fill("de-no-discard");
+  await page.getByLabel("Body").fill("DE no discard body.");
+  await page.getByLabel("Excerpt").fill("DE no discard excerpt.");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("Post saved.")).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/[0-9a-f-]+\/edit\?saved=1$/);
+
+  // The draft-only editor offers no discard action.
+  await expect(page.getByRole("button", { name: "Discard draft" })).toHaveCount(
+    0,
+  );
+
+  // The whole-post delete is still the removal path.
+  await expect(page.getByRole("button", { name: "Delete post" })).toBeVisible();
 });

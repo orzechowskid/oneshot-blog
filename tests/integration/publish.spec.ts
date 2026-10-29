@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Publishing scenarios from
+// Scenarios from
 // openspec/changes/markdown-draft-editor/specs/blog-drafting/spec.md
 // ("Publishing promotes the draft", "Public posts expose only published
-// content", "Publication state changes only through Publish"), one test per
-// scenario, named after the scenario. Time assertions are read from the
+// content", "Publication state changes only through Publish", "Draft saves
+// do not change published content"), one test per scenario, named after the
+// scenario. Time assertions are read from the
 // public post page and the admin list, never from the database.
 //
 // The edit action branches on a navigate fetch: a rejected publish
@@ -295,6 +296,93 @@ test("Republishing a published post with a draft", async ({ page }) => {
   expect(new Date(secondLastChange ?? "").getTime()).toBeGreaterThan(
     new Date(firstLastChange ?? "").getTime(),
   );
+});
+
+test("Saving a draft on a published post", async ({ page }) => {
+  const fields: PostFields = {
+    title: "Draft save published post",
+    slug: "draft-save-published-post",
+    body: "Published body with a **kept** marker.",
+    excerpt: "Draft save published excerpt.",
+  };
+  const draftValues = {
+    title: "Draft save draft title",
+    body: "Draft body with a **draft** marker.",
+    excerpt: "Draft save draft excerpt.",
+  };
+  await login(page);
+
+  // Publish a new post directly; the editor is open on the published post.
+  await page.goto("/admin/new");
+  await fillPostForm(page, fields);
+  await publish(page);
+  // Wait for the loader re-render: a published post shows the address as a
+  // read-only control that is no longer part of the form.
+  await expect(page.locator('input[name="slug"]')).toHaveCount(0);
+
+  // The publication time readers see before the draft save.
+  const before = await publicPostTime(page, fields.slug);
+
+  // Reading the time left the page on the public post: re-open the editor
+  // from the admin list, the way the republish test does after its
+  // public-page read.
+  await page.goto("/admin");
+  await adminRow(page, fields.title).getByRole("link", { name: "Edit" }).click();
+
+  // Attach a draft with different content.
+  await page.getByLabel("Title").fill(draftValues.title);
+  await page.getByLabel("Body").fill(draftValues.body);
+  await page.getByLabel("Excerpt").fill(draftValues.excerpt);
+  await saveDraft(page);
+  // Wait for the loader re-render: the draft is attached, so the Discard
+  // draft control appears.
+  await expect(
+    page.getByRole("button", { name: "Discard draft" }),
+  ).toBeVisible();
+
+  // The admin list names the state.
+  await page.goto("/admin");
+  await expect(
+    adminRow(page, fields.title).getByText(
+      "Published with draft attached",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  // The published title, body, and address stay unchanged: the post is
+  // still served at its original address with the published content, and
+  // the publication time is unchanged.
+  const after = await publicPostTime(page, fields.slug);
+  await expect(
+    page.getByRole("heading", { level: 1, name: fields.title }),
+  ).toBeVisible();
+  await expect(page.locator("strong")).toHaveText("kept");
+  await expect(page.getByText(draftValues.title)).toHaveCount(0);
+  await expect(page.getByText(draftValues.body)).toHaveCount(0);
+  expect(after.iso).toBe(before.iso);
+  expect(after.text).toBe(before.text);
+
+  // The public listing keeps the published excerpt for this post, not the
+  // draft's. The positive assertion is scoped to this post's card because
+  // the listing also carries the other posts' excerpts; the negative one
+  // is page-wide: the draft excerpt must not appear anywhere on the public
+  // site.
+  await page.goto("/");
+  const card = page
+    .locator("article")
+    .filter({ has: page.getByRole("link", { name: fields.title }) });
+  await expect(card).toHaveCount(1);
+  await expect(card.getByText(fields.excerpt)).toBeVisible();
+  await expect(page.getByText(draftValues.excerpt)).toHaveCount(0);
+
+  // The draft content is stored: the editor reopens with the draft values.
+  await page.goto("/admin");
+  await adminRow(page, fields.title)
+    .getByRole("link", { name: "Edit" })
+    .click();
+  await expect(page.getByLabel("Title")).toHaveValue(draftValues.title);
+  await expect(page.getByLabel("Body")).toHaveValue(draftValues.body);
+  await expect(page.getByLabel("Excerpt")).toHaveValue(draftValues.excerpt);
 });
 
 test("Publish is unavailable on a published post with no attached draft", async ({
