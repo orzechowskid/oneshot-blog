@@ -277,6 +277,18 @@ describe("validatePublish", () => {
     );
   });
 
+  it("rejects a publish with an empty title", () => {
+    expect(
+      validatePublish({
+        title: "",
+        slug: "a-post",
+        body: "Body text.",
+        excerpt: "Excerpt.",
+        published: true,
+      }).title,
+    ).toBe("Enter a title.");
+  });
+
   it("applies the existing address rules to a new or draft-only post", () => {
     expect(validatePublish({ ...newPostValues, slug: "" }).slug).toBe(
       "Enter a slug.",

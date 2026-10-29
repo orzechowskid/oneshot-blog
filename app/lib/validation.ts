@@ -106,7 +106,9 @@ export function validatePublish(
 ): FieldErrors {
   const errors: FieldErrors = {};
 
-  if (values.title.length > 200) {
+  if (!values.title) {
+    errors.title = "Enter a title.";
+  } else if (values.title.length > 200) {
     errors.title = "Titles must be 200 characters or fewer.";
   }
 
