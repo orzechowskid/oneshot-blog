@@ -78,7 +78,7 @@ The `update` intent is removed, and `updatePost` is removed with it. Today `upda
 
 A mutation with no intent performs no write. The editor is returned with an error naming the missing action.
 
-Server-side rule for D6: a publish on a published row with no attached draft (all four draft columns null) is rejected. The disabled control in the UI is not the only guard. Recommendation: reject with HTTP 409 as a state conflict, matching the existing conflict response (app/routes/seed.tsx:50).
+Server-side rule for D6: a publish on a published row with no attached draft (all four draft columns null) is rejected. The disabled control in the UI is not the only guard. The edit route answers a guard miss and a publish conflict with HTTP 409, carrying a form field message rendered in the editor's alert summary, the submitted values kept, and no query-parameter redirect (app/routes/admin-edit.tsx).
 
 ### 5. Autosave
 
@@ -120,7 +120,7 @@ The rejected option is a client-side `renderMarkdown` call. Measured cost: wirin
 
 Consequence for the editor component: the editor component and its Storybook story must not import `app/lib/markdown.ts`, so the `renderMarkdown` path and its dependency closure stay out of client code and total client JS stays at the measured baseline of 481,765 bytes raw and 154,781 bytes gzipped. Note that `app/lib/markdown.ts` is already reachable from the admin-edit client chunk today through the `markdownImageSnippet` import, which is called in a render (app/routes/admin-edit.tsx:19, :213) and pulls `marked` into the chunk, measured. The invariant is that no client code calls `renderMarkdown`, so the `sanitize-html` closure, absent from all client chunks today, measured, stays out.
 
-The bundle budget check. `scripts/check-bundle-budget.ts` runs after `npm run build`. It sums the bytes of `build/client/assets/*.js`, fails when the total exceeds 490,000 bytes, and fails when any client chunk contains `sanitize-html`, `htmlparser2`, `postcss`, or `entities`. The baseline it guards is the measured 481,765 bytes raw and 154,781 bytes gzipped. The browser-rendered alternative, measured, is 636,035 bytes raw and 210,620 bytes gzipped.
+The bundle budget check. `scripts/check-bundle-budget.ts` runs after `npm run build`. It sums the bytes of `build/client/assets/*.js` and enforces three byte ceilings: 490000 raw for the client JS total (measured today 483183), 160000 gzipped for the client JS total (measured today 155842), and 60000 raw for the admin-edit chunk (measured today 50178). The byte ceilings are the only failures. The forbidden-package scan, which looks for `sanitize-html`, `htmlparser2`, `postcss`, and `entities` in the client chunks, is advisory output that never fails the build: minification drops package names, and `entities` is an ordinary English word. CSS is reported, not gated: 13276 bytes across 9 files. The browser-rendered alternative, measured, is 636035 bytes raw and 210620 bytes gzipped.
 
 ### 7. Editor component
 
@@ -181,7 +181,9 @@ These items are accepted and stay open:
 - An explicit save on an expired session drops the typed text. The explicit save goes through the admin routes, whose loaders redirect to the login page when the session is absent, and the form is replaced; the autosave 401 path keeps the typed text, the explicit path does not.
 - Text typed during an in-flight submit is overwritten by the field re-seed. A save response re-seeds the form fields from the stored values, so a change typed while the save is in flight is replaced when the response lands.
 - An image attached to a draft-only post is served at `/images/<id>` with no status gate. The image route does not check the post's publication state, and the gap pre-dates this change.
-- The bundle budget does not gate CSS. `scripts/check-bundle-budget.ts` sums and caps client JavaScript only; CSS bytes are reported, not gated.
+- The bundle budget does not gate CSS. `scripts/check-bundle-budget.ts` sums and caps client JavaScript only; CSS bytes are reported, not gated, at 13276 bytes across 9 files.
+- The stale-guard message is not reachable by a sequential browser test. `saveDraft` re-reads the row before the guarded write (app/lib/posts.server.ts:295), and the guarded UPDATE with `AND status = 'draft'` (app/lib/posts.server.ts:333) runs only when that fresh read sees `draft`, so a guard miss needs two requests in flight at the same time. A test that publishes in one tab, waits for the confirmation, and only then saves a draft in a second tab produces a successful attached draft, measured. The suite proves the in-editor message shape through the publish-conflict test in tests/integration/publish.spec.ts instead.
+- An editor left open on a post that another tab deleted answers the Not Found page. The edit loader reads the row before the action runs (app/routes/admin-edit.tsx:52-53), so once the delete has landed, the loader finds no row and the route answers the Not Found page instead of running the action.
 
 ## Migration Plan
 
