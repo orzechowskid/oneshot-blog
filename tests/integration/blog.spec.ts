@@ -245,3 +245,30 @@ test("the owner can log out", async ({ page }) => {
     page.getByRole("heading", { level: 1, name: "Log in" }),
   ).toBeVisible();
 });
+
+test("the site header shows New post when logged in and hides it when logged out", async ({
+  page,
+}) => {
+  // Logged out: the header offers Log in and no New post link.
+  await page.goto("/");
+  await expect(
+    page.getByRole("link", { name: "New post", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Log in" })).toBeVisible();
+
+  // Logged in: the header offers New post, and it points at the new-post form.
+  await login(page);
+  await page.goto("/");
+  const newPost = page.getByRole("link", { name: "New post", exact: true });
+  await expect(newPost).toBeVisible();
+  await expect(newPost).toHaveAttribute("href", "/admin/new");
+
+  // The brand link in the top left is the way to the blog list.
+  await expect(
+    page.getByRole("link", { name: "One Shot Blog", exact: true }),
+  ).toHaveAttribute("href", "/");
+
+  // The header link opens the new-post form.
+  await newPost.click();
+  await expect(page).toHaveURL(/\/admin\/new$/);
+});
