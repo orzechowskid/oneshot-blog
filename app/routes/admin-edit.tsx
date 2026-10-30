@@ -72,7 +72,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     initialPreviewHtml: renderMarkdown(body),
     isPublished: post.status === "published",
     hasDraft,
-    draftUpdatedAt: post.draft_updated_at,
     images: await listImages(id),
     saved: url.searchParams.get("saved") === "1",
     imageUploaded: url.searchParams.get("imageUploaded") === "1",
