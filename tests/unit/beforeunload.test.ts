@@ -1,6 +1,13 @@
-// The browser dialog itself is not observable under Playwright: Chromium
-// under Playwright suppresses the beforeunload dialog, so the reload and
-// tab-close prompts cannot be asserted in the integration suite.
+// The reload half of the unsaved-changes warning is observable under Playwright
+// and is asserted in the integration suite. Measured: Chromium under Playwright
+// emits a dialog of type beforeunload with an empty message when a reload starts
+// while the form is dirty; an unhandled dialog leaves the reload pending;
+// dismissing it aborts the navigation and keeps the typed text; accepting it lets
+// the reload proceed, and the editor then shows the stored saved content. The
+// test is `reloading with unsaved edits warns, and dismissing keeps the typed
+// text while accepting reloads the editor to the stored content` in
+// tests/integration/autosave.spec.ts:202. The tab-close prompt remains
+// unobservable, because a closed tab cannot be inspected.
 //
 // Measured limit: app/components/PostForm.tsx exposes no exportable hook
 // for the unsaved-changes warning. The registration and removal live in an

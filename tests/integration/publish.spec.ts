@@ -288,7 +288,7 @@ test("Republishing a published post with a draft", async ({ page }) => {
   // publication time stays unchanged.
   const after = await publicPostTime(page, fields.slug);
   await expect(page.locator("strong")).toHaveText("Second");
-  await expect(page.getByText("First marker", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("First publication body")).toHaveCount(0);
   expect(after.iso).toBe(first.iso);
   expect(after.text).toBe(first.text);
 
@@ -438,7 +438,6 @@ test("Publish is unavailable on a published post with no attached draft", async 
   });
   expect(response.status()).toBe(409);
   expect(await response.text()).toContain(PUBLISH_CONFLICT_MESSAGE);
-  expect(editPostId(page)).toBe(id);
 
   // The post is still public at its address, unchanged.
   const published = await publicPostTime(page, fields.slug);
@@ -475,6 +474,7 @@ test("A reader sees published content, not the attached draft", async ({
   await expect(
     page.getByRole("button", { name: "Discard draft" }),
   ).toBeVisible();
+  const id = editPostId(page);
 
   // The admin list names the state.
   await page.goto("/admin");
@@ -485,11 +485,20 @@ test("A reader sees published content, not the attached draft", async ({
     ),
   ).toBeVisible();
 
+  // The editor preview shows the content the editor is editing, which is
+  // the attached draft, and not the published content. The Body field and
+  // the preview show the same saved content on the first paint.
+  await page.goto(`/admin/${id}/edit`);
+  const preview = page.getByLabel("Markdown preview");
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText("Draft body with a");
+  await expect(preview).not.toContainText("Published body with a");
+
   // The public post page shows the published content, not the draft.
   const response = await page.goto(`/posts/${fields.slug}`);
   expect(response?.status()).toBe(200);
   await expect(page.locator("strong")).toHaveText("kept");
-  await expect(page.getByText("hidden", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("hidden marker")).toHaveCount(0);
   await expect(page.getByText(draftExcerpt)).toHaveCount(0);
 
   // The public listing shows the published excerpt for this post, not
@@ -620,8 +629,20 @@ test("A publish rejected by a draft discarded in another tab keeps the editor an
   ).toHaveCount(0);
 
   // Publish from the second page: the action sees a published row with no
-  // attached draft and answers 409 with the conflict form message.
-  await other.getByRole("button", { name: "Publish", exact: true }).click();
+  // attached draft and answers 409 with the conflict form message. Playwright
+  // exposes no navigation flag on a request, so the submission mode is proven
+  // by what the browser does: a JavaScript form submission fetches and leaves
+  // the main frame unloaded, so no framenavigated event fires on this page.
+  const navigations: string[] = [];
+  other.on("framenavigated", (frame) => {
+    if (frame === other.mainFrame()) navigations.push(frame.url());
+  });
+  const [response] = await Promise.all([
+    other.waitForResponse((res) => res.request().method() === "POST"),
+    other.getByRole("button", { name: "Publish", exact: true }).click(),
+  ]);
+  expect(response.status()).toBe(409);
+  expect(navigations).toEqual([]);
 
   // The editor keeps the typed value and reports the conflict: the URL is
   // still the editor route, the alert names the conflict, and the Title

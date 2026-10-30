@@ -504,6 +504,9 @@ test("a draft-only post keeps its address when a later draft saves with the same
   // The original draft keeps its address.
   await page.goto(firstEditPath);
   await expect(page.getByLabel("Slug")).toHaveValue("de-draft-collision");
+
+  // A draft-only post keeps its address editable.
+  await expect(page.getByLabel("Slug")).toBeEditable();
 });
 
 test("the draft-only editor shows no discard action and keeps the whole-post delete", async ({ page }) => {
