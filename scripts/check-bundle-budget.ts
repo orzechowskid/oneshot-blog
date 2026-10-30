@@ -39,9 +39,12 @@ for (const name of files) {
   }
 }
 
-const adminEdit = chunks.find((chunk) =>
+const adminEditChunks = chunks.filter((chunk) =>
   adminEditChunkPattern.test(chunk.name),
 );
+const largestAdminEdit = adminEditChunks.reduce<
+  { name: string; raw: number; gzipped: number } | null
+>((max, chunk) => (max === null || chunk.raw > max.raw ? chunk : max), null);
 
 console.log(`Files: ${files.length}`);
 console.log(
@@ -53,9 +56,12 @@ for (const chunk of [...chunks].sort((a, b) => b.raw - a.raw)) {
     `  ${chunk.name}: ${chunk.raw} bytes raw, ${chunk.gzipped} bytes gzipped`,
   );
 }
-if (adminEdit) {
+if (largestAdminEdit) {
+  for (const chunk of adminEditChunks) {
+    console.log(`admin-edit chunk: ${chunk.name} is ${chunk.raw} bytes raw.`);
+  }
   console.log(
-    `admin-edit chunk: ${adminEdit.raw} bytes raw (ceiling ${adminEditRawCeilingBytes}).`,
+    `admin-edit chunk: largest is ${largestAdminEdit.name} at ${largestAdminEdit.raw} bytes raw (ceiling ${adminEditRawCeilingBytes}).`,
   );
 } else {
   console.log("admin-edit chunk: not present in this build.");
@@ -89,9 +95,12 @@ if (gzipTotal > gzipCeilingBytes) {
   );
   failed = true;
 }
-if (adminEdit && adminEdit.raw > adminEditRawCeilingBytes) {
+if (
+  largestAdminEdit &&
+  largestAdminEdit.raw > adminEditRawCeilingBytes
+) {
   console.error(
-    `FAIL: admin-edit chunk ${adminEdit.raw} bytes raw exceeds the ${adminEditRawCeilingBytes} byte ceiling.`,
+    `FAIL: admin-edit chunk ${largestAdminEdit.name} at ${largestAdminEdit.raw} bytes raw exceeds the ${adminEditRawCeilingBytes} byte ceiling.`,
   );
   failed = true;
 }
