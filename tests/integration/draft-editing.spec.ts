@@ -4,6 +4,11 @@ const OWNER_EMAIL = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
 const OWNER_PASSWORD =
   process.env.BOOTSTRAP_PASSWORD ?? "test-owner-password";
 
+const PNG_1PX = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 async function login(page: Page): Promise<void> {
   await page.goto("/login");
   await page.getByLabel("Email").fill(OWNER_EMAIL);
@@ -528,4 +533,49 @@ test("the draft-only editor shows no discard action and keeps the whole-post del
 
   // The whole-post delete is still the removal path.
   await expect(page.getByRole("button", { name: "Delete post" })).toBeVisible();
+});
+
+test("uploading an image keeps the text typed after the last autosave", async ({ page }) => {
+  // The image upload form sits in the same route as the post form, and
+  // useNavigation reports every form on the page. An upload is not a
+  // post-form save, so it must not claim the loader re-seed: an upload that
+  // follows an autosave would otherwise replace the fields with the stored
+  // content and drop the text typed after that autosave.
+  await login(page);
+  const marker = String(Date.now() % 1000000);
+  const slug = `image-upload-keeps-text-${marker}`;
+  const editPath = await createPublishedPost(page, {
+    title: `Image upload keeps text ${marker}`,
+    slug,
+    body: `Published body ${marker}.`,
+    excerpt: `Published excerpt ${marker}.`,
+  });
+
+  await page.goto(editPath);
+  // Text that the idle autosave stores, so the row's draft save time moves.
+  await page.getByLabel("Body").fill(`Autosaved body ${marker}.`);
+  const autosaved = page.waitForResponse((response) =>
+    response.url().includes("/admin/autosave"),
+  );
+  await page.waitForTimeout(3400);
+  expect((await autosaved).ok(), "autosave response").toBe(true);
+
+  // Text typed after that autosave, stored nowhere.
+  const typedAfterAutosave = `Typed after autosave ${marker}.`;
+  await page.getByLabel("Body").fill(typedAfterAutosave);
+
+  await page.getByLabel("Image file").setInputFiles({
+    name: "pixel.png",
+    mimeType: "image/png",
+    buffer: PNG_1PX,
+  });
+  await page.getByLabel("Image description").fill("A black square");
+  await page.getByRole("button", { name: "Upload image" }).click();
+  await expect(page.getByText("Image uploaded.")).toBeVisible();
+
+  // The editor keeps the typed text, and the upload touched no published
+  // content.
+  await expect(page.getByLabel("Body")).toHaveValue(typedAfterAutosave);
+  await page.goto(`/posts/${slug}`);
+  await expect(page.getByText(`Published body ${marker}.`)).toBeVisible();
 });

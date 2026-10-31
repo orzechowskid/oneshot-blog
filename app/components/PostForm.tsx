@@ -125,10 +125,20 @@ export function PostForm({
       navigation.state === "submitting" &&
       prevNavigationStateRef.current === "idle"
     ) {
-      explicitSubmitRef.current = true;
+      // Only the three post-form intents re-seed the fields. The image upload,
+      // the image delete, and the whole-post delete live in this same route, and
+      // useNavigation reports every form on the page, so an upload that follows
+      // an autosave would otherwise claim the next revision and replace the
+      // fields with the stored content, dropping the text typed after that
+      // autosave.
+      const intent = navigation.formData?.get("intent");
+      explicitSubmitRef.current =
+        intent === "save-draft" ||
+        intent === "publish" ||
+        intent === "discard-draft";
     }
     prevNavigationStateRef.current = navigation.state;
-  }, [navigation.state]);
+  }, [navigation.state, navigation.formData]);
 
   // After an explicit submission the server accepts, the redirect re-runs
   // the loader and the route passes new values with a new revision.

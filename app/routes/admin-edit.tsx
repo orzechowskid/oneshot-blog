@@ -304,12 +304,16 @@ export default function AdminEditRoute() {
   // stays put on a rejected submission (action data) and on autosaves
   // (fetches). The draft save time, or the row save time for a draft-only
   // post, is what tells two saves of the same state apart. PostForm
-  // re-seeds its fields from the loader values when it changes.
+  // re-seeds its fields from the loader values when it changes. The time is
+  // read in milliseconds: pg returns a timestamp as a Date object and the
+  // string form of a Date drops the milliseconds, so two saves accepted in
+  // the same second would produce the same revision and the fields would not
+  // be re-seeded.
   const revision = [
     post.id,
     post.status,
     hasDraft,
-    post.draft_updated_at ?? post.updated_at,
+    new Date(post.draft_updated_at ?? post.updated_at).getTime(),
   ].join("|");
 
   return (
