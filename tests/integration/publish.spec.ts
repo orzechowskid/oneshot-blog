@@ -653,3 +653,81 @@ test("A publish rejected by a draft discarded in another tab keeps the editor an
   );
   await expect(other.getByLabel("Title")).toHaveValue(secondTabTitle);
 });
+
+test("Publish keeps the body it validated when a draft save lands in the same window", async ({
+  page,
+}) => {
+  // Publish writes the validated title, body and excerpt in one guarded
+  // UPDATE, so a draft save sent at the same instant cannot replace the
+  // published body: whichever order the two writes land in, the published
+  // columns end holding the body the publish request carried.
+  // The marker is digits only: the slug field accepts lowercase letters,
+  // numbers and single hyphens, so a marker with a space would be normalised
+  // by the app and the test's own address would not match the stored one.
+  const marker = String(Date.now() % 1000000);
+  const title = `Atomic publish ${marker}`;
+  const slug = `atomic-publish-${marker}`;
+  const excerpt = `Atomic publish excerpt ${marker}.`;
+
+  await login(page);
+  await page.goto("/admin/new");
+  await fillPostForm(page, {
+    title,
+    slug,
+    body: `Attached draft ${marker}.`,
+    excerpt,
+  });
+  await saveDraft(page);
+  const id = editPostId(page);
+
+  const saveForm = {
+    intent: "save-draft",
+    title,
+    slug,
+    excerpt,
+    redirectTo: `/admin/${id}/edit`,
+  };
+
+  for (let round = 1; round <= 10; round += 1) {
+    const publishedBody = `Published body ${marker} round ${round}.`;
+
+    // Attach a draft through the same endpoint the Save draft button uses.
+    const attach = await page.request.post(`/admin/${id}/edit`, {
+      form: { ...saveForm, body: `Draft body round ${round} ${marker}.` },
+      maxRedirects: 0,
+    });
+    expect(attach.status(), `attach round ${round}`).toBe(302);
+
+    // The racing pair: publish the validated body, and an empty-body draft
+    // save, sent at the same time.
+    const [publishResponse, emptySave] = await Promise.all([
+      page.request.post(`/admin/${id}/edit`, {
+        form: {
+          intent: "publish",
+          title,
+          slug,
+          body: publishedBody,
+          excerpt,
+          redirectTo: `/admin/${id}/edit`,
+        },
+        maxRedirects: 0,
+      }),
+      page.request.post(`/admin/${id}/edit`, {
+        form: { ...saveForm, body: "" },
+        maxRedirects: 0,
+      }),
+    ]);
+    expect(publishResponse.status(), `publish round ${round}`).toBe(302);
+    // The draft save is the loser of the race in some rounds, and losing is
+    // the designed outcome: the guarded write matches no row and the request
+    // is answered with a field message. Either answer is acceptable here, as
+    // long as the published body below is the validated one.
+    expect([302, 409], `empty save round ${round}`).toContain(emptySave.status());
+
+    // The public post page shows the validated body, never the draft body
+    // and never an empty body.
+    await page.goto(`/posts/${slug}`);
+    await expect(page.getByText(publishedBody)).toBeVisible();
+    await expect(page.getByText(`Draft body round ${round}`)).toHaveCount(0);
+  }
+});
