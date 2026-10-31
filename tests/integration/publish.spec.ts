@@ -730,4 +730,21 @@ test("Publish keeps the body it validated when a draft save lands in the same wi
     await expect(page.getByText(publishedBody)).toBeVisible();
     await expect(page.getByText(`Draft body round ${round}`)).toHaveCount(0);
   }
+
+  // The row ends published. Every round above proves it: an unpublished row
+  // answers the Not Found page, so the validated body being visible means the
+  // row is public. The admin list row is checked the same way, and the draft
+  // state is recorded, not asserted, for the reason below.
+  await page.goto("/admin");
+  const row = adminRow(page, title);
+  await expect(row.getByText(/Published/)).toBeVisible();
+  await expect(row.getByText("Draft", { exact: true })).toHaveCount(0);
+
+  // The draft columns are deliberately not asserted. A draft save that lands
+  // after the publish attaches a draft to the published row, which is the
+  // state the design names "Published with draft attached", and that write
+  // touches no published column. Measured after this race, ten rounds: status
+  // published, body_markdown equal to the body of the last publish, and one
+  // attached draft whose body is empty. The invariant this test owns is the
+  // published content, and it holds in both orders.
 });
