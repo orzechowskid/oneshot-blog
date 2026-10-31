@@ -295,11 +295,14 @@ export function PostForm({
     }
   }, []);
 
-  // Autosave after three seconds with no further change, only while the form
-  // is dirty and a title is present. Each change resets the timer. The
-  // timer does not start or fire while an explicit submission is in
-  // flight, so a pending autosave cannot race an explicit save for the
-  // same row.
+  // Autosave runs only when the form is dirty, the title is non-empty, and
+  // no save is in flight. The timer does not start or fire while an explicit
+  // submission is in flight, so a pending autosave cannot race an explicit
+  // save for the same row. The timer also does not start while an autosave
+  // is in flight: on a new post that first request is the one that carries
+  // the new post id, so a second request sent before it answers would
+  // create a second draft row. The effect re-runs when the request ends, so
+  // a form that is still dirty is saved again with the stored id.
   useEffect(() => {
     const isDirty =
       title !== savedValues.title ||
@@ -309,12 +312,22 @@ export function PostForm({
     if (!isDirty) return;
     if (!title.trim()) return;
     if (explicitInFlight) return;
+    if (autosaveInFlight) return;
     const timer = window.setTimeout(() => {
       if (explicitInFlightRef.current) return;
       void runAutosave();
     }, AUTOSAVE_IDLE_MS);
     return () => window.clearTimeout(timer);
-  }, [title, slug, body, excerpt, savedValues, explicitInFlight, runAutosave]);
+  }, [
+    title,
+    slug,
+    body,
+    excerpt,
+    savedValues,
+    explicitInFlight,
+    autosaveInFlight,
+    runAutosave,
+  ]);
 
   const clearFieldError = useCallback((field: string) => {
     setAutosaveFieldErrors((prev) => {

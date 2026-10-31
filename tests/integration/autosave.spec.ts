@@ -340,3 +340,65 @@ test("an explicit draft save on a new post that cannot obtain a free address is 
     await client.end();
   }
 });
+
+test("autosave does not start a second save while the first is in flight", async ({ page }) => {
+  // The idle timer is 3000 ms. Delaying every autosave response by 4000 ms
+  // puts a later keystroke's timer inside the first request, which is the
+  // overlap the guard must prevent. The decisive assertion is that no
+  // autosave request after the first is sent without a post id.
+  const marker = `overlap ${Date.now() % 1000000}`;
+  const autosaveBodies: string[] = [];
+  await page.route("**/admin/autosave", async (route) => {
+    autosaveBodies.push(route.request().postData() ?? "");
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    await route.continue();
+  });
+
+  await login(page);
+  await page.goto("/admin/new");
+  await page.getByLabel("Title").fill(`Autosave overlap ${marker}`);
+
+  // Autosave 1 starts at about 3000 ms and answers at about 7000 ms.
+  await page.waitForTimeout(3300);
+  await page.getByLabel("Body").fill(`Body typed during the first save ${marker}`);
+
+  await page.waitForResponse(
+    (response) => response.url().includes("/admin/autosave"),
+    { timeout: 20000 },
+  );
+
+  // The next save must reuse the stored id, so it fires after the
+  // in-flight save finishes and the idle timer runs out again.
+  await expect(page.getByRole("status")).toHaveText("Saved", {
+    timeout: 20000,
+  });
+
+  // The autosave request body is multipart form data, so the post id field
+  // is identified by its part header, not by a query-style "id=" pair.
+  const withoutId = autosaveBodies
+    .slice(1)
+    .filter((body) => !body.includes('name="id"'));
+  expect(
+    withoutId,
+    `autosave requests after the first that carry no id:\n${withoutId.join("\n")}`,
+  ).toEqual([]);
+
+  const databaseUrl =
+    process.env.DATABASE_URL ?? "postgres://blog:blog@127.0.0.1:5432/blog";
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const rows = await client.query(
+      "SELECT slug, status FROM posts WHERE title = $1 ORDER BY slug",
+      [`Autosave overlap ${marker}`],
+    );
+    expect(
+      rows.rows,
+      `rows created for the title: ${JSON.stringify(rows.rows)}`,
+    ).toHaveLength(1);
+    expect(rows.rows[0].slug).not.toMatch(/-2$/);
+    expect(rows.rows[0].status).toBe("draft");
+  } finally {
+    await client.end();
+  }
+});
