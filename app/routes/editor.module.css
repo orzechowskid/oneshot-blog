@@ -109,10 +109,6 @@
   overflow-wrap: anywhere;
 }
 
-.deleteRow {
-  margin-top: 1rem;
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;

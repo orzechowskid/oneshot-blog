@@ -1,0 +1,234 @@
+/* Editor layout for task 4.2.
+   Wide screens (64rem and up): the body editor and the preview sit side
+   by side in a two-column grid, and the toolbar above them spans both
+   columns. The tab toggle is hidden.
+   Narrow screens (below 64rem): the areas stack, the container class
+   from the component selects the visible panel - layoutWide shows the
+   body while the Edit tab is active, layoutNarrow shows the preview
+   while the Preview tab is active - and both tab buttons stay visible. */
+
+.wrapper {
+  display: block;
+}
+
+.wrapper > label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.toolbar button {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.layoutWide,
+.layoutNarrow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+/* Narrow screens: show only the panel of the active tab. */
+.layoutWide .previewArea {
+  display: none;
+}
+
+.layoutNarrow .bodyArea {
+  display: none;
+}
+
+.bodyArea {
+  width: 100%;
+  min-height: 16rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.bodyArea:disabled {
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.previewArea {
+  min-height: 16rem;
+  max-height: 24rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+}
+
+/* Prose styles kept in step with MarkdownContent.module.css so the
+   preview reads like a public post. */
+.previewArea h1,
+.previewArea h2,
+.previewArea h3,
+.previewArea h4,
+.previewArea h5,
+.previewArea h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.previewArea h1 {
+  font-size: 2rem;
+}
+
+.previewArea h2 {
+  font-size: 1.5rem;
+}
+
+.previewArea h3 {
+  font-size: 1.25rem;
+}
+
+.previewArea p {
+  margin: 0 0 1em;
+}
+
+.previewArea ul,
+.previewArea ol {
+  margin: 0 0 1em;
+  padding-left: 1.5rem;
+}
+
+.previewArea li {
+  margin-bottom: 0.35em;
+}
+
+.previewArea li.task-list-item {
+  list-style: none;
+  margin-left: -1.25rem;
+}
+
+.previewArea a {
+  color: var(--color-primary);
+}
+
+.previewArea code {
+  background: var(--color-surface);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+.previewArea pre {
+  background: var(--color-surface);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.previewArea pre code {
+  background: none;
+  padding: 0;
+}
+
+.previewArea blockquote {
+  border-left: 4px solid var(--color-border);
+  margin: 1rem 0;
+  padding: 0.25rem 1rem;
+  color: var(--color-muted);
+}
+
+.previewArea table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.previewArea th,
+.previewArea td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.previewArea th {
+  background: var(--color-surface);
+}
+
+.previewArea img {
+  border-radius: 8px;
+}
+
+.tabEdit,
+.tabPreview {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+  margin-right: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.tabPreview {
+  margin-right: 0;
+}
+
+.tabEdit[aria-pressed="true"],
+.tabPreview[aria-pressed="true"] {
+  background: var(--color-surface-strong);
+  border-color: var(--color-primary);
+  font-weight: 600;
+}
+
+@media (min-width: 64rem) {
+  .layoutWide,
+  .layoutNarrow {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  /* Wide screens: both areas are visible regardless of the active tab. */
+  .layoutWide .previewArea,
+  .layoutNarrow .bodyArea {
+    display: block;
+  }
+
+  .tabEdit,
+  .tabPreview {
+    display: none;
+  }
+}

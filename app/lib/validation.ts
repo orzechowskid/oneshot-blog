@@ -6,7 +6,6 @@ export type PostValues = {
   slug: string;
   body: string;
   excerpt: string;
-  published: boolean;
 };
 
 export type LoginValues = {
@@ -23,18 +22,21 @@ export function readPostForm(formData: FormData): PostValues {
   const rawSlug = String(formData.get("slug") ?? "").trim();
   const body = String(formData.get("body") ?? "");
   const rawExcerpt = String(formData.get("excerpt") ?? "").trim();
-  const published = formData.get("published") === "yes";
 
   return {
     title,
     slug: rawSlug ? slugify(rawSlug) : slugify(title),
     body,
     excerpt: rawExcerpt || makeExcerpt(body),
-    published,
   };
 }
 
-export function validatePost(values: PostValues): FieldErrors {
+// targetIsPublished is true when the target row is already published, in
+// which case the submitted address is ignored and no address error is shown.
+export function validateDraftSave(
+  values: PostValues,
+  targetIsPublished = false,
+): FieldErrors {
   const errors: FieldErrors = {};
 
   if (!values.title) {
@@ -43,12 +45,48 @@ export function validatePost(values: PostValues): FieldErrors {
     errors.title = "Titles must be 200 characters or fewer.";
   }
 
-  if (!values.slug) {
-    errors.slug = "Enter a slug.";
-  } else if (values.slug.length > 100) {
-    errors.slug = "Slugs must be 100 characters or fewer.";
-  } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.slug)) {
-    errors.slug = "Use lowercase letters, numbers, and single hyphens.";
+  if (values.title && !targetIsPublished) {
+    if (!values.slug) {
+      errors.slug = "Enter a slug.";
+    } else if (values.slug.length > 100) {
+      errors.slug = "Slugs must be 100 characters or fewer.";
+    } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.slug)) {
+      errors.slug = "Use lowercase letters, numbers, and single hyphens.";
+    }
+  }
+
+  // A draft save accepts an empty body; only the length limit applies.
+  if (values.body.length > 100_000) {
+    errors.body = "Post bodies must be 100,000 characters or fewer.";
+  }
+
+  if (values.excerpt.length > 400) {
+    errors.excerpt = "Excerpts must be 400 characters or fewer.";
+  }
+
+  return errors;
+}
+
+export function validatePublish(
+  values: PostValues,
+  targetIsPublished = false,
+): FieldErrors {
+  const errors: FieldErrors = {};
+
+  if (!values.title) {
+    errors.title = "Enter a title.";
+  } else if (values.title.length > 200) {
+    errors.title = "Titles must be 200 characters or fewer.";
+  }
+
+  if (values.title && !targetIsPublished) {
+    if (!values.slug) {
+      errors.slug = "Enter a slug.";
+    } else if (values.slug.length > 100) {
+      errors.slug = "Slugs must be 100 characters or fewer.";
+    } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.slug)) {
+      errors.slug = "Use lowercase letters, numbers, and single hyphens.";
+    }
   }
 
   if (!values.body.trim()) {

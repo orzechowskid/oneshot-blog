@@ -55,11 +55,11 @@ export default function App() {
             One Shot Blog
           </Link>
           <nav className={styles.nav} aria-label="Main">
-            <Link href="/" className={styles.navLink}>
-              Blog
-            </Link>
             {user ? (
               <>
+                <Link href="/admin/new" className={styles.navLink}>
+                  New post
+                </Link>
                 <Link href="/admin" className={styles.navLink}>
                   Admin
                 </Link>

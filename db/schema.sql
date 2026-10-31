@@ -43,3 +43,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions (token_hash);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
+
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS draft_title text;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS draft_body_markdown text;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS draft_excerpt text;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS draft_updated_at timestamptz;
