@@ -24,7 +24,7 @@ import {
   discardDraft,
   getPost,
   listImages,
-  publishPost,
+  publishPostContent,
   saveDraft,
 } from "../lib/posts.server";
 import {
@@ -205,75 +205,44 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return data({ errors, values }, { status: 400 });
     }
 
-    // Publish writes the content it validated in this request. The
-    // stored row may hold an older value than the form (the three-second
-    // autosave has not fired), so promoting the row alone would publish
-    // the stored value, not the validated one. The call below is the
-    // same one the save-draft intent uses.
-    const saved = await saveDraft(id, {
+    // Publish writes the content it validated in this request, in one
+    // guarded write. The stored row may hold an older value than the form
+    // (the three-second autosave has not fired), so promoting the stored
+    // draft alone would publish the stored value, not the validated one.
+    // The single write also removes the window a concurrent save-draft used
+    // to land in between a save and a promotion.
+    const result = await publishPostContent(id, {
       title: values.title,
       slug: values.slug,
       body: values.body,
       excerpt: values.excerpt,
     });
-    if (!saved) notFound();
-    if (!saved.saved) {
-      if (saved.fieldErrors.form) {
-        // The status guard did not apply: the row was published while the
-        // publish was in flight. The 409 carries the message and the
-        // submitted values.
-        return data(
-          {
-            errors: {
-              form: STALE_ROW_MESSAGE,
-            },
-            values,
-          },
-          { status: 409 },
-        );
-      }
-      // The 50-attempt address cap: a field error naming the address the
-      // form held, never a server error.
-      return data(
-        {
-          errors: {
-            form: "The post was not published.",
-            slug: `The address '${values.slug}' is taken.`,
-          },
-          values,
-        },
-        { status: 400 },
-      );
-    }
-
-    // publishPost writes no slug, so the stored address is kept (D1).
-    const result = await publishPost(id);
-    if (!result) {
-      if (saved.status === "published") {
-        // The published-row guard did not apply: a concurrent Discard
-        // draft cleared the draft while this publish was in flight. The
-        // row is gone only if the post is.
-        const current = await getPost(id);
-        if (!current) notFound();
-        return data(
-          {
-            errors: {
-              form: STALE_ROW_MESSAGE,
-            },
-            values,
-          },
-          { status: 409 },
-        );
-      }
-      notFound();
-    }
+    if (!result) notFound();
     if (!result.saved) {
-      // The draft-row guard did not apply: a concurrent publish won the
-      // race. The 409 carries the message and the submitted values.
+      if (result.fieldErrors.slug) {
+        // The 50-attempt address cap: a field error naming the address the
+        // form held, never a server error.
+        return data(
+          {
+            errors: {
+              form: "The post was not published.",
+              slug: `The address '${values.slug}' is taken.`,
+            },
+            values,
+          },
+          { status: 400 },
+        );
+      }
+      // A guard did not apply: a concurrent publish won the race, a
+      // concurrent discard-draft cleared the draft, or the row changed. The
+      // 409 carries the message the data layer named and the submitted
+      // values.
       return data(
         {
           errors: {
-            form: STALE_ROW_MESSAGE,
+            form:
+              result.fieldErrors.form ??
+              "The post is already published and has no draft to publish.",
           },
           values,
         },
