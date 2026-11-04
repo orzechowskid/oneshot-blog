@@ -78,6 +78,20 @@ function refuseSecretListRead(): never {
   process.exit(1);
 }
 
+function secretName(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return undefined;
+  }
+  const record = entry as { name?: unknown; Name?: unknown };
+  if (typeof record.name === "string" && record.name !== "") {
+    return record.name;
+  }
+  if (typeof record.Name === "string" && record.Name !== "") {
+    return record.Name;
+  }
+  return undefined;
+}
+
 function listDeployedSecretNames(): string[] {
   const result = fly(["secrets", "list", "--app", appName, "--json"], true);
   if (result.status !== 0) {
@@ -92,7 +106,13 @@ function listDeployedSecretNames(): string[] {
   if (!Array.isArray(parsed)) {
     refuseSecretListRead();
   }
-  return parsed.map((entry) => (entry as { Name?: string }).Name ?? "");
+  return parsed.map((entry) => {
+    const name = secretName(entry);
+    if (name === undefined) {
+      refuseSecretListRead();
+    }
+    return name;
+  });
 }
 
 function ensurePostgres(): void {

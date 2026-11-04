@@ -112,3 +112,42 @@ The only secret write in the script is `fly(["secrets", "set", "--app", appName,
 - Deploy script: imports side-effect free, refuses with exit 1 when the admin pair is missing, and writes only the admin credential pair as secrets.
 
 No deployed app was contacted and no secret was written during this verification run.
+
+---
+
+## Post-archive fix (4 November 2026): secret-name key casing
+
+Measured cause. The owner ran the deploy on the production app. The deploy printed
+"Postgres app oneshot-blog-db already exists." and then attempted
+`fly postgres attach`, which Fly refused with
+`consumer app "oneshot-blog" already contains a secret named DATABASE_URL`.
+Nothing was written by that run: the deploy writes secrets after the database step
+and exited at the database step.
+
+Root cause. `scripts/deploy.ts` read each entry of the deployed secret-name list as
+`Name`, but `fly secrets list --app <app> --json` prints lowercase `name`. Every
+name resolved to an empty string, so the list never contained `DATABASE_URL` and the
+attach decision said "attach". The app-existence check was unaffected because
+`fly apps list --json` prints uppercase `Name`.
+
+Owner decision. Fix the key casing and treat an unusable entry as an unreadable list.
+No new exported helper, so the module keeps exporting exactly `buildDeploySecrets`
+and `shouldAttachPostgres`.
+
+Change. A module-private helper reads a non-empty string `name` first, then `Name` as
+a fallback. An entry that is not a plain object, or has no non-empty string `name` and
+no non-empty string `Name`, calls the existing refusal: the deploy prints the command
+to run by hand, writes no secret, runs no attach, and exits with status 1. An empty
+array remains a valid read and means the attach step runs.
+
+Measured verification. `npm run typecheck` exit 0. `npx vitest run`: 12 test files,
+116 tests passed, 0 failed. Import with the admin pair, the deploy access token and
+the database address unset: exit 0, exports `buildDeploySecrets, shouldAttachPostgres`,
+no deploy tool output. Run with those variables unset: exit 1 with the admin-pair
+refusal, no deploy tool call.
+
+Fresh-context review verdict: OK with notes, no blocker. Queued follow-ups, not fixed
+in this change: the app-existence check treats unreadable output as "app does not
+exist" and then creates the app, which is the opposite of the refusal rule used for
+the secret list; and the attach failure echoes the deploy tool's own output, which the
+README says the deploy captures.
