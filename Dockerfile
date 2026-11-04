@@ -19,6 +19,7 @@ COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY --from=build /app/db ./db
+COPY --from=build /app/scripts/owner-reset.ts ./scripts/
 COPY --from=build /app/server.ts ./server.ts
 
 USER node

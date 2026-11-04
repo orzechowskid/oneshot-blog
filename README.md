@@ -18,10 +18,10 @@ No other global CLI tools are needed. Playwright browsers are installed through 
 
 `npm run setup` asks for the mode and the owner credentials, then writes `.env`.
 
-- Choose `1` (local): writes a development `.env` with the Docker Compose database URL, port 3000, bootstrap credentials, and a generated `SEED_TOKEN`.
+- Choose `1` (local): writes a development `.env` with the Docker Compose database URL, port 3000, the `ADMIN_EMAIL` and `ADMIN_PASSWORD` pair, and a generated `SEED_TOKEN`.
 - Choose `2` (Fly.io): writes the settings used by `scripts/deploy.ts` and updates the `app` and `primary_region` in `fly.toml`. It can run the deploy at the end.
 
-The installer asks only for values that have no working default: the owner email and password. Press Enter to accept each default. Leave the password blank to generate one. The owner password and Fly API token prompts do not echo typed characters. The installer writes the owner password and `SEED_TOKEN` to `.env`; it does not print either secret. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
+The installer asks for the owner email and password. The email has no default and must be a valid address. Leave the password blank to generate one. The owner password and Fly API token prompts do not echo typed characters. The installer writes the owner password and `SEED_TOKEN` to `.env`; it does not print either secret. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
 
 The npm scripts load `.env` with Node's `--env-file-if-exists=.env`, so the file applies to `npm run dev`, `npm start`, `npm run deploy`, and `npm run seed`.
 
@@ -50,11 +50,11 @@ Open `http://127.0.0.1:3000`. The dev script watches only `server.ts`. Vite hand
 
 The schema is applied automatically at startup. The first request creates the tables if they do not exist.
 
-To create an owner account during local development, set `BOOTSTRAP_EMAIL` and `BOOTSTRAP_PASSWORD` before starting the server. The bootstrap code creates the owner only when the `users` table is empty.
+To create the admin account during local development, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` before starting the server. The server creates the account only when the `users` table is empty.
 
 ```bash
-BOOTSTRAP_EMAIL=owner@example.com \
-BOOTSTRAP_PASSWORD='a-long-local-password' \
+ADMIN_EMAIL=admin@example.com \
+ADMIN_PASSWORD='a-long-local-password' \
 npm run dev
 ```
 
@@ -86,6 +86,7 @@ npm start
 | `npm run test:storybook:update` | Regenerate visual snapshots |
 | `npm run deploy` | Create or update the Fly.io app, database, secrets, and owner account |
 | `npm run seed` | Seed the owner account on an existing deployment |
+| `npm run owner:reset` | Reset the admin email and password in the database |
 | `npm run setup` | Write a local or Fly.io `.env` interactively |
 | `npm run verify` | Run typecheck, unit tests, and production build |
 
@@ -97,12 +98,10 @@ npm start
 | `PORT` | Server | HTTP port. Default is `3000`; Fly uses `8080` |
 | `NODE_ENV` | Server, auth | `production` enables production behavior |
 | `COOKIE_SECURE` | Auth | `true` or `false`; production defaults to `true` |
-| `BOOTSTRAP_EMAIL` | Server | Owner email created when the users table is empty |
-| `BOOTSTRAP_PASSWORD` | Server | Owner password for bootstrap |
+| `ADMIN_EMAIL` | Server, deploy, seed, reset | Admin email. The server creates the admin account from it when the users table is empty |
+| `ADMIN_PASSWORD` | Server, deploy, seed, reset | Admin password. The deploy script refuses to run when it is absent |
 | `SEED_TOKEN` | Seed route, deploy, seed script | Shared secret for `POST /internal/seed` |
 | `APP_URL` | Seed script | Base URL of the deployed app |
-| `OWNER_EMAIL` | Deploy, seed | Owner email |
-| `OWNER_PASSWORD` | Deploy, seed | Owner password. Deploy generates one if absent |
 | `FLY_APP` | Deploy | Fly app name. Default is `oneshot-blog` |
 | `FLY_REGION` | Deploy | Fly region for the Postgres app. Default is `iad` |
 | `FLY_ORG` | Deploy | Optional Fly organization |
@@ -113,16 +112,15 @@ npm start
 
 ## Deployment to Fly.io
 
-The deploy script is unattended. It:
+The deploy script is unattended. It reads `ADMIN_EMAIL` and `ADMIN_PASSWORD` from the environment or `.env`. When either is unset it refuses: it prints an instruction naming both variables and exits before contacting `flyctl`, the app, or any secret. With both set, it:
 
 1. Creates the Fly app if it does not exist.
 2. Creates a Fly Postgres app if `DATABASE_URL` is not supplied.
 3. Attaches the Postgres database to the app.
-4. Sets `SEED_TOKEN` and, when supplied, `DATABASE_URL`.
+4. Sets `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SEED_TOKEN`, and, when supplied, `DATABASE_URL` as Fly secrets. Before this step it prints a line naming the app and the email whose credential it stores.
 5. Deploys the Docker image with a remote builder.
 6. Waits for `https://<app>.fly.dev/health`.
-7. Seeds the owner account through `POST /internal/seed`.
-8. Prints the owner email and a generated password when no password was supplied.
+7. Seeds the admin account through `POST /internal/seed` when no account exists yet.
 
 Run it with a Fly token:
 
@@ -130,12 +128,12 @@ Run it with a Fly token:
 FLY_API_TOKEN=... npm run deploy
 ```
 
-Set the owner explicitly:
+Set the admin credential explicitly. Use the production values, not the local development ones: the deploy stores the pair as Fly secrets.
 
 ```bash
 FLY_API_TOKEN=... \
-OWNER_EMAIL=owner@example.com \
-OWNER_PASSWORD='a-long-owner-password' \
+ADMIN_EMAIL=admin@example.com \
+ADMIN_PASSWORD='a-long-admin-password' \
 npm run deploy
 ```
 
@@ -163,6 +161,40 @@ No GitHub token is needed for the workflow. GitHub Actions supplies an ephemeral
 
 The workflow deploys the existing Fly app. It does not create the app, database, or owner account. Run `npm run deploy` once locally to provision those, or run `npm run setup` and choose Fly.io. If the app name is not `oneshot-blog`, update `app` in `fly.toml` and pass the same name to `flyctl tokens create deploy -a`.
 
+The workflow deploys with `flyctl deploy` on a merged pull request. It reads no credential variable and sets no secret, so after a deploy through this route `ADMIN_EMAIL` and `ADMIN_PASSWORD` are absent from the app. To give the machine the pair, an operator runs:
+
+```bash
+fly secrets set -a oneshot-blog --stage ADMIN_EMAIL=... ADMIN_PASSWORD=...
+```
+
+## Admin credential reset
+
+`npm run owner:reset` resets the admin credential in the database. It reads `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `DATABASE_URL` from the environment only. The password is never taken from arguments, so it never appears in shell history or the process list. It must be 12 to 200 characters.
+
+The command works on the `users` table in one transaction:
+
+- `users` has zero rows: it inserts the admin account.
+- `users` has one row: it updates that row's email and password hash.
+- `users` has more than one row: it prints an error naming the row count, changes nothing, and exits 1.
+
+Existing sessions are untouched: a reset changes the credential, it does not log anyone out. The command prints the resulting email and never prints the password.
+
+Local form, reading the pair and `DATABASE_URL` from `.env`:
+
+```bash
+npm run owner:reset
+```
+
+Production form, run inside the Fly machine:
+
+```bash
+fly ssh console -a oneshot-blog -C "node scripts/owner-reset.ts"
+```
+
+The command reads only environment variables: the machine's `DATABASE_URL` secret and, after a deploy that stored them, the `ADMIN_EMAIL` and `ADMIN_PASSWORD` secrets. `fly ssh console` enters the machine as root, so the command runs as root inside the machine.
+
+To rotate the production credential, keep the current one reachable until the new one works: read your saved copy of the credential first, deploy with `ADMIN_EMAIL` and `ADMIN_PASSWORD` set, run the reset command, sign in with the new credential, and only then retire the saved copy. An early delete is unrecoverable: no in-app path shows a password, and the seed route refuses to create a second account once a user exists.
+
 ## Tests
 
 ### Unit tests
@@ -183,7 +215,7 @@ npx playwright install chromium
 npm run test:integration
 ```
 
-The Playwright config resets the database before each run. It uses `BOOTSTRAP_EMAIL` and `BOOTSTRAP_PASSWORD`, with defaults for the test owner.
+The Playwright config resets the database before each run. It passes `ADMIN_EMAIL` and `ADMIN_PASSWORD` to the server, with a fixed test account as the default.
 
 ### Storybook tests
 

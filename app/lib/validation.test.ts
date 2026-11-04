@@ -37,10 +37,10 @@ describe("readPostForm", () => {
 describe("readLoginForm", () => {
   it("lowercases and trims the email", () => {
     const form = new FormData();
-    form.set("email", " Owner@Example.com ");
+    form.set("email", " Reader@Example.com ");
     form.set("password", "secret");
     expect(readLoginForm(form)).toEqual({
-      email: "owner@example.com",
+      email: "reader@example.com",
       password: "secret",
     });
   });
@@ -49,7 +49,7 @@ describe("readLoginForm", () => {
 describe("validateLogin", () => {
   it("accepts a valid login", () => {
     expect(
-      validateLogin({ email: "owner@example.com", password: "secret" }),
+      validateLogin({ email: "reader@example.com", password: "secret" }),
     ).toEqual({});
   });
 
@@ -66,7 +66,7 @@ describe("validateLogin", () => {
   });
 
   it("requires a password", () => {
-    expect(validateLogin({ email: "owner@example.com", password: "" }).password).toBe(
+    expect(validateLogin({ email: "reader@example.com", password: "" }).password).toBe(
       "Enter your password.",
     );
   });
@@ -74,7 +74,7 @@ describe("validateLogin", () => {
 
 describe("validateEmail", () => {
   it("accepts a valid email", () => {
-    expect(validateEmail("owner@example.com")).toBeNull();
+    expect(validateEmail("reader@example.com")).toBeNull();
   });
 
   it("rejects an empty email", () => {
@@ -99,7 +99,7 @@ describe("validatePassword", () => {
 
   it("rejects a short password", () => {
     expect(validatePassword("short")).toBe(
-      "Use at least 12 characters for the owner password.",
+      "Use at least 12 characters for the admin password.",
     );
   });
 
