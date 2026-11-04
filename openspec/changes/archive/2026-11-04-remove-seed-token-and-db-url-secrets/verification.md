@@ -151,3 +151,37 @@ in this change: the app-existence check treats unreadable output as "app does no
 exist" and then creates the app, which is the opposite of the refusal rule used for
 the secret list; and the attach failure echoes the deploy tool's own output, which the
 README says the deploy captures.
+
+## Post-archive fix 2 (4 November 2026): app-list refusal and attach output
+
+Owner decision. Fix the two notes recorded by the fresh-context review of the key
+casing fix: apply the refusal rule to the app-list read, and stop the deploy from
+echoing the deploy tool's output at the Postgres attach step.
+
+Change. `appExists` now passes the allow-failure flag, and refuses with a message
+naming `fly apps list --json` when the command exits non-zero, the text is not JSON,
+the JSON is not an array, or an entry is not a plain object with a usable name. A
+valid empty array still returns false, so a first-time deploy still creates the app.
+The shared private name helper (lowercase `name` first, uppercase `Name` fallback) is
+now used by both list reads. The attach call passes the allow-failure flag; on a
+non-zero status the deploy prints one line naming
+`fly postgres attach <postgres app> --app <app>` and exits 1. The tool's standard
+error echo requires the flag to be false, so no deploy tool output for that step
+reaches the console in the success case or the failure case. No new exports.
+
+Measured verification. `npm run typecheck` exit 0. `npx vitest run`: 12 test files,
+116 tests passed, 0 failed. `npx vitest run tests/unit/deploy.test.ts`: 1 file, 5
+tests passed. Import with the admin pair, the deploy access token and the database
+address unset: exit 0, exports `buildDeploySecrets, shouldAttachPostgres`, no deploy
+tool output. Run with those variables unset: exit 1 with the admin-pair refusal, no
+deploy tool call. Search for the seed token, the seeding step, the seed route and any
+local database-address read in the deploy script: no match.
+
+Fresh-context review verdict: OK with notes, no blocker. It enumerated the app-list
+input shapes (non-zero exit, non-JSON, `null`, `42`, a bare object, `[]`, a list
+containing the app, `[null]`, an entry with only a digest, an entry with a numeric
+name) and confirmed each lands on the refusal, on true, or on false with no guess.
+
+Queued, not fixed: three wording and documentation notes from that review. Two refusal
+messages assert facts the script cannot always know, and the deploy section of the
+README does not mention the three new stop-with-a-hand-run-command cases.
