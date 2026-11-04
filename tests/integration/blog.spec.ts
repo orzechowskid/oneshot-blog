@@ -1,9 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import * as testAccount from "./test-account";
 
-const OWNER_EMAIL = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
-const OWNER_PASSWORD =
-  process.env.BOOTSTRAP_PASSWORD ?? "test-owner-password";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? testAccount.ADMIN_EMAIL;
+const ADMIN_PASSWORD =
+  process.env.ADMIN_PASSWORD ?? testAccount.ADMIN_PASSWORD;
 const SEED_TOKEN = "integration-test-seed-token";
 
 const PNG = Buffer.from(
@@ -13,8 +14,8 @@ const PNG = Buffer.from(
 
 async function login(page: Page): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
-  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/admin/);
 }
@@ -163,7 +164,7 @@ test("the owner can upload an image and use it in a post", async ({ page }) => {
 
 test("invalid login shows an accessible error", async ({ page }) => {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
   await page.getByLabel("Password").fill("wrong password");
   await page.getByRole("button", { name: "Log in" }).click();
 

@@ -11,9 +11,6 @@ const appName = process.env.FLY_APP ?? "oneshot-blog";
 const region = process.env.FLY_REGION ?? "iad";
 const org = process.env.FLY_ORG ?? "";
 const postgresApp = process.env.FLY_POSTGRES_APP ?? `${appName}-db`;
-const ownerEmail = process.env.OWNER_EMAIL ?? "owner@example.com";
-const ownerPassword =
-  process.env.OWNER_PASSWORD ?? randomBytes(18).toString("base64url");
 const seedToken =
   process.env.SEED_TOKEN ?? randomBytes(32).toString("base64url");
 const flyctl = process.env.FLYCTL_BIN ?? "flyctl";
@@ -101,9 +98,16 @@ function ensurePostgres(): void {
   fly(["postgres", "attach", postgresApp, "--app", appName, "--yes"], true);
 }
 
-function setSecrets(): void {
-  const secrets = [`SEED_TOKEN=${seedToken}`];
+function setSecrets(adminEmail: string, adminPassword: string): void {
+  const secrets = [
+    `ADMIN_EMAIL=${adminEmail}`,
+    `ADMIN_PASSWORD=${adminPassword}`,
+    `SEED_TOKEN=${seedToken}`,
+  ];
   if (databaseUrl) secrets.push(`DATABASE_URL=${databaseUrl}`);
+  console.log(
+    `Storing ADMIN_EMAIL and ADMIN_PASSWORD as Fly secrets for app ${appName} (${adminEmail}).`,
+  );
   fly(["secrets", "set", "--app", appName, "--stage", ...secrets]);
 }
 
@@ -123,7 +127,7 @@ async function waitForHealth(): Promise<void> {
   throw new Error(`The app did not become healthy at ${healthUrl}.`);
 }
 
-async function seedOwner(): Promise<void> {
+async function seedOwner(email: string, password: string): Promise<void> {
   const response = await fetch(
     new URL("/internal/seed", `https://${appName}.fly.dev`),
     {
@@ -132,7 +136,7 @@ async function seedOwner(): Promise<void> {
         "Content-Type": "application/json",
         "X-Seed-Token": seedToken,
       },
-      body: JSON.stringify({ email: ownerEmail, password: ownerPassword }),
+      body: JSON.stringify({ email, password }),
     },
   );
 
@@ -147,9 +151,18 @@ async function seedOwner(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    console.error(
+      "Set ADMIN_EMAIL and ADMIN_PASSWORD in the environment or .env, then run the deploy again.",
+    );
+    process.exit(1);
+  }
+
   ensureApp();
   ensurePostgres();
-  setSecrets();
+  setSecrets(adminEmail, adminPassword);
 
   fly([
     "deploy",
@@ -161,14 +174,10 @@ async function main(): Promise<void> {
   ]);
 
   await waitForHealth();
-  await seedOwner();
+  await seedOwner(adminEmail, adminPassword);
 
   console.log("");
   console.log(`Deployed: https://${appName}.fly.dev`);
-  console.log(`Owner email: ${ownerEmail}`);
-  if (!process.env.OWNER_PASSWORD) {
-    console.log(`Generated owner password: ${ownerPassword}`);
-  }
   console.log(`SEED_TOKEN: ${seedToken}`);
 }
 

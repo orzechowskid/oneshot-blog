@@ -257,7 +257,7 @@ async function main(): Promise<void> {
     ["1", "2"],
   );
 
-  const email = await askEmail("Owner email", "owner@example.com");
+  const email = await askEmail("Owner email", "");
   const password = await askPassword();
   const seedToken = generateToken();
 
@@ -269,12 +269,10 @@ async function main(): Promise<void> {
       ["PORT", "3000"],
       ["NODE_ENV", "development"],
       ["COOKIE_SECURE", "false"],
-      ["BOOTSTRAP_EMAIL", email],
-      ["BOOTSTRAP_PASSWORD", password],
+      ["ADMIN_EMAIL", email],
+      ["ADMIN_PASSWORD", password],
       ["SEED_TOKEN", seedToken],
       ["APP_URL", "http://127.0.0.1:3000"],
-      ["OWNER_EMAIL", email],
-      ["OWNER_PASSWORD", password],
     ]);
 
     rl.close();
@@ -318,8 +316,8 @@ async function main(): Promise<void> {
     ["FLY_POSTGRES_APP", `${appName}-db`],
     ["FLY_API_TOKEN", apiToken],
     ["FLYCTL_BIN", "flyctl"],
-    ["OWNER_EMAIL", email],
-    ["OWNER_PASSWORD", password],
+    ["ADMIN_EMAIL", email],
+    ["ADMIN_PASSWORD", password],
     ["SEED_TOKEN", seedToken],
     ["APP_URL", `https://${appName}.fly.dev`],
   ];

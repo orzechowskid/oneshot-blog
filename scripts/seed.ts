@@ -1,13 +1,16 @@
 const appUrl = process.env.APP_URL ?? "https://oneshot-blog.fly.dev";
 const seedToken = process.env.SEED_TOKEN;
-const email = process.env.OWNER_EMAIL ?? "owner@example.com";
-const password = process.env.OWNER_PASSWORD;
+const email = process.env.ADMIN_EMAIL;
+const password = process.env.ADMIN_PASSWORD;
 
 if (!seedToken) {
   throw new Error("SEED_TOKEN is required.");
 }
+if (!email) {
+  throw new Error("ADMIN_EMAIL is required.");
+}
 if (!password) {
-  throw new Error("OWNER_PASSWORD is required.");
+  throw new Error("ADMIN_PASSWORD is required.");
 }
 
 const response = await fetch(new URL("/internal/seed", appUrl), {

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import * as testAccount from "./test-account";
 
 // Scenarios from
 // openspec/changes/markdown-draft-editor/specs/blog-drafting/spec.md
@@ -27,9 +28,9 @@ import { expect, test, type Page } from "@playwright/test";
 // becomes published, and the Discard draft control appears when a draft
 // attaches and disappears when it clears.
 
-const OWNER_EMAIL = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
-const OWNER_PASSWORD =
-  process.env.BOOTSTRAP_PASSWORD ?? "test-owner-password";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? testAccount.ADMIN_EMAIL;
+const ADMIN_PASSWORD =
+  process.env.ADMIN_PASSWORD ?? testAccount.ADMIN_PASSWORD;
 
 // The conflict message the editor action shows when a publish request
 // arrives for a published row with no attached draft.
@@ -50,8 +51,8 @@ function readableDate(value: Date): string {
 
 async function login(page: Page): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
-  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/admin/);
 }
