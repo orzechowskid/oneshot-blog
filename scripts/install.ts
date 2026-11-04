@@ -128,10 +128,6 @@ function generatePassword(): string {
   return randomBytes(18).toString("base64url");
 }
 
-function generateToken(): string {
-  return randomBytes(32).toString("base64url");
-}
-
 async function ask(question: string, fallback = ""): Promise<string> {
   const label = fallback ? `${question} [${fallback}]` : question;
   const answer = (await readLine(`${label}: `)).trim();
@@ -259,7 +255,6 @@ async function main(): Promise<void> {
 
   const email = await askEmail("Owner email", "");
   const password = await askPassword();
-  const seedToken = generateToken();
 
   if (mode === "1") {
     const databaseUrl = await ask("DATABASE_URL", LOCAL_DATABASE_URL);
@@ -271,8 +266,6 @@ async function main(): Promise<void> {
       ["COOKIE_SECURE", "false"],
       ["ADMIN_EMAIL", email],
       ["ADMIN_PASSWORD", password],
-      ["SEED_TOKEN", seedToken],
-      ["APP_URL", "http://127.0.0.1:3000"],
     ]);
 
     rl.close();
@@ -318,8 +311,6 @@ async function main(): Promise<void> {
     ["FLYCTL_BIN", "flyctl"],
     ["ADMIN_EMAIL", email],
     ["ADMIN_PASSWORD", password],
-    ["SEED_TOKEN", seedToken],
-    ["APP_URL", `https://${appName}.fly.dev`],
   ];
 
   if (databaseUrl) entries.push(["DATABASE_URL", databaseUrl]);

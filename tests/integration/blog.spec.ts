@@ -5,7 +5,6 @@ import * as testAccount from "./test-account";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? testAccount.ADMIN_EMAIL;
 const ADMIN_PASSWORD =
   process.env.ADMIN_PASSWORD ?? testAccount.ADMIN_PASSWORD;
-const SEED_TOKEN = "integration-test-seed-token";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQAAAABJRU5ErkJggg==",
@@ -181,35 +180,6 @@ test("pages meet WCAG 2.1 AA automated checks", async ({ page }) => {
   await expectNoA11yViolations(page, "/admin");
   await expectNoA11yViolations(page, "/admin/new");
   await expectNoA11yViolations(page, "/posts/integration-test-post");
-});
-
-test("the seed endpoint rejects a second owner", async ({ request }) => {
-  const response = await request.post("/internal/seed", {
-    headers: {
-      "X-Seed-Token": SEED_TOKEN,
-    },
-    data: {
-      email: "second-owner@example.com",
-      password: "another-long-password",
-    },
-  });
-
-  expect(response.status()).toBe(409);
-  expect(await response.text()).toContain("An owner account already exists.");
-});
-
-test("the seed endpoint rejects a bad token", async ({ request }) => {
-  const response = await request.post("/internal/seed", {
-    headers: {
-      "X-Seed-Token": "wrong-token",
-    },
-    data: {
-      email: "second-owner@example.com",
-      password: "another-long-password",
-    },
-  });
-
-  expect(response.status()).toBe(403);
 });
 
 test("the home page lists the published post", async ({ page }) => {

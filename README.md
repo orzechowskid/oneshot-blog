@@ -18,12 +18,12 @@ No other global CLI tools are needed. Playwright browsers are installed through 
 
 `npm run setup` asks for the mode and the owner credentials, then writes `.env`.
 
-- Choose `1` (local): writes a development `.env` with the Docker Compose database URL, port 3000, the `ADMIN_EMAIL` and `ADMIN_PASSWORD` pair, and a generated `SEED_TOKEN`.
+- Choose `1` (local): writes a development `.env` with the Docker Compose database URL, port 3000, the `ADMIN_EMAIL` and `ADMIN_PASSWORD` pair.
 - Choose `2` (Fly.io): writes the settings used by `scripts/deploy.ts` and updates the `app` and `primary_region` in `fly.toml`. It can run the deploy at the end.
 
-The installer asks for the owner email and password. The email has no default and must be a valid address. Leave the password blank to generate one. The owner password and Fly API token prompts do not echo typed characters. The installer writes the owner password and `SEED_TOKEN` to `.env`; it does not print either secret. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
+The installer asks for the owner email and password. The email has no default and must be a valid address. Leave the password blank to generate one. The owner password and Fly API token prompts do not echo typed characters. The installer writes the owner password to `.env`; it does not print the secret. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
 
-The npm scripts load `.env` with Node's `--env-file-if-exists=.env`, so the file applies to `npm run dev`, `npm start`, `npm run deploy`, and `npm run seed`.
+The npm scripts load `.env` with Node's `--env-file-if-exists=.env`, so the file applies to `npm run dev`, `npm start`, and `npm run deploy`.
 
 ```bash
 npm install
@@ -84,8 +84,7 @@ npm start
 | `npm run build-storybook` | Build a static Storybook |
 | `npm run test:storybook` | Build Storybook and run visual and accessibility tests |
 | `npm run test:storybook:update` | Regenerate visual snapshots |
-| `npm run deploy` | Create or update the Fly.io app, database, secrets, and owner account |
-| `npm run seed` | Seed the owner account on an existing deployment |
+| `npm run deploy` | Create or update the Fly.io app, check the Postgres attachment, and set the admin credential secrets |
 | `npm run owner:reset` | Reset the admin email and password in the database |
 | `npm run setup` | Write a local or Fly.io `.env` interactively |
 | `npm run verify` | Run typecheck, unit tests, and production build |
@@ -94,14 +93,12 @@ npm start
 
 | Variable | Used by | Meaning |
 | --- | --- | --- |
-| `DATABASE_URL` | Server, scripts, deploy | PostgreSQL connection string |
+| `DATABASE_URL` | Server, scripts, reset | PostgreSQL connection string |
 | `PORT` | Server | HTTP port. Default is `3000`; Fly uses `8080` |
 | `NODE_ENV` | Server, auth | `production` enables production behavior |
 | `COOKIE_SECURE` | Auth | `true` or `false`; production defaults to `true` |
-| `ADMIN_EMAIL` | Server, deploy, seed, reset | Admin email. The server creates the admin account from it when the users table is empty |
-| `ADMIN_PASSWORD` | Server, deploy, seed, reset | Admin password. The deploy script refuses to run when it is absent |
-| `SEED_TOKEN` | Seed route, deploy, seed script | Shared secret for `POST /internal/seed` |
-| `APP_URL` | Seed script | Base URL of the deployed app |
+| `ADMIN_EMAIL` | Server, deploy, reset | Admin email. The server creates the admin account from it when the users table is empty |
+| `ADMIN_PASSWORD` | Server, deploy, reset | Admin password. The deploy script refuses to run when it is absent |
 | `FLY_APP` | Deploy | Fly app name. Default is `oneshot-blog` |
 | `FLY_REGION` | Deploy | Fly region for the Postgres app. Default is `iad` |
 | `FLY_ORG` | Deploy | Optional Fly organization |
@@ -115,12 +112,12 @@ npm start
 The deploy script is unattended. It reads `ADMIN_EMAIL` and `ADMIN_PASSWORD` from the environment or `.env`. When either is unset it refuses: it prints an instruction naming both variables and exits before contacting `flyctl`, the app, or any secret. With both set, it:
 
 1. Creates the Fly app if it does not exist.
-2. Creates a Fly Postgres app if `DATABASE_URL` is not supplied.
-3. Attaches the Postgres database to the app.
-4. Sets `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SEED_TOKEN`, and, when supplied, `DATABASE_URL` as Fly secrets. Before this step it prints a line naming the app and the email whose credential it stores.
-5. Deploys the Docker image with a remote builder.
-6. Waits for `https://<app>.fly.dev/health`.
-7. Seeds the admin account through `POST /internal/seed` when no account exists yet.
+2. Lists the deployed app's secret names, and only when `DATABASE_URL` is absent creates the Postgres app (if missing) and attaches it; when the secret is present the deploy changes nothing about the database.
+3. Sets `ADMIN_EMAIL` and `ADMIN_PASSWORD` as Fly secrets. Before this step it prints a line naming the app and the email whose credential it stores.
+4. Deploys the Docker image with a remote builder.
+5. Waits for `https://<app>.fly.dev/health`.
+
+The deploy writes no `DATABASE_URL` secret; the only mechanism that sets the deployed app's database address is `fly postgres attach`. When the deploy runs the Postgres attach step, the generated database role password is not shown because the deploy captures command output; to see and store that password, run `fly postgres attach` by hand.
 
 Run it with a Fly token:
 
@@ -193,13 +190,13 @@ fly ssh console -a oneshot-blog -C "sh -c 'cd /app && node scripts/owner-reset.t
 
 The command reads only environment variables. The command runs as the user the ssh console gives you. The console shell does not automatically inherit the app's Fly secrets, so the operator must supply the admin pair in that command's environment. Both the working directory and the secret inheritance are to be confirmed the first time the command is run against the live app.
 
-To rotate the production credential, keep the current one reachable until the new one works: read your saved copy of the credential first, deploy with `ADMIN_EMAIL` and `ADMIN_PASSWORD` set, run the reset command, sign in with the new credential, and only then retire the saved copy. An early delete is unrecoverable: no in-app path shows a password, and the seed route refuses to create a second account once a user exists.
+To rotate the production credential, keep the current one reachable until the new one works: read your saved copy of the credential first, deploy with `ADMIN_EMAIL` and `ADMIN_PASSWORD` set, run the reset command, sign in with the new credential, and only then retire the saved copy. An early delete is unrecoverable: no in-app path shows a password.
 
 ## Tests
 
 ### Unit tests
 
-Vitest covers pure functions: slugs, excerpts, image validation, password hashing, cookies, redirect safety, formatting, validation, and Markdown rendering.
+Vitest covers pure functions: slugs, excerpts, image validation, password hashing, cookies, redirect safety, formatting, validation, and Markdown rendering. It also covers the deploy script's secret list and attach decision, and the admin credential reset script's password hashing.
 
 ```bash
 npm test
@@ -207,7 +204,7 @@ npm test
 
 ### Integration tests
 
-Playwright starts a production server, resets the database, and waits for `/health`. The tests cover the empty home page, login, post creation, image upload, Markdown image rendering, invalid login, WCAG checks, seed endpoint behavior, home page listing, post deletion, and logout.
+Playwright starts a production server, resets the database, and waits for `/health`. The tests cover the empty home page, login, post creation, image upload, Markdown image rendering, invalid login, WCAG checks, home page listing, post deletion, and logout.
 
 ```bash
 npm run db:up
@@ -266,4 +263,3 @@ Images are limited to 5 MB and to PNG, JPEG, WebP, or GIF. The server detects th
 - State-changing actions check the request origin.
 - Redirects are limited to same-origin paths.
 - Markdown is rendered with GitHub-Flavored Markdown and sanitized with `sanitize-html`.
-- The seed endpoint requires `SEED_TOKEN` and refuses to create a second owner.

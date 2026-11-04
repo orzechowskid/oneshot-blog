@@ -1,5 +1,4 @@
 import { ensureSchema, getPool } from "./db.server";
-import { hashPassword } from "./password";
 import { uniqueSlugCandidate } from "./slug";
 import type { FieldErrors } from "./validation";
 
@@ -432,22 +431,6 @@ export async function deleteImage(id: string, postId: string): Promise<boolean> 
     [id, postId],
   );
   return (result.rowCount ?? 0) > 0;
-}
-
-export async function countUsers(): Promise<number> {
-  await ensureSchema();
-  const result = await getPool().query<{ count: string }>(
-    "SELECT count(*)::text AS count FROM users",
-  );
-  return Number(result.rows[0]?.count ?? 0);
-}
-
-export async function createOwner(email: string, password: string): Promise<void> {
-  await ensureSchema();
-  await getPool().query(
-    "INSERT INTO users (email, password_hash) VALUES ($1, $2)",
-    [email.toLowerCase(), hashPassword(password)],
-  );
 }
 
 // Publish the content the request validated, in one guarded write. The

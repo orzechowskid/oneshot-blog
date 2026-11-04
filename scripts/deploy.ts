@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 type FlyResult = {
   status: number;
@@ -11,11 +11,8 @@ const appName = process.env.FLY_APP ?? "oneshot-blog";
 const region = process.env.FLY_REGION ?? "iad";
 const org = process.env.FLY_ORG ?? "";
 const postgresApp = process.env.FLY_POSTGRES_APP ?? `${appName}-db`;
-const seedToken =
-  process.env.SEED_TOKEN ?? randomBytes(32).toString("base64url");
 const flyctl = process.env.FLYCTL_BIN ?? "flyctl";
 const apiToken = process.env.FLY_API_TOKEN;
-const databaseUrl = process.env.DATABASE_URL;
 
 function fly(args: string[], allowFailure = false): FlyResult {
   const env = { ...process.env };
@@ -67,9 +64,43 @@ function ensureApp(): void {
   console.log(`Created app ${appName}.`);
 }
 
+export function shouldAttachPostgres(deployedSecretNames: string[]): boolean {
+  return !deployedSecretNames.includes("DATABASE_URL");
+}
+
+function refuseSecretListRead(): never {
+  console.error(
+    `Could not read the deployed app's secret names. ` +
+      `Run the list command by hand and check its output: ` +
+      `fly secrets list --app ${appName} --json. ` +
+      `Nothing was changed and no secret was written.`,
+  );
+  process.exit(1);
+}
+
+function listDeployedSecretNames(): string[] {
+  const result = fly(["secrets", "list", "--app", appName, "--json"], true);
+  if (result.status !== 0) {
+    refuseSecretListRead();
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    refuseSecretListRead();
+  }
+  if (!Array.isArray(parsed)) {
+    refuseSecretListRead();
+  }
+  return parsed.map((entry) => (entry as { Name?: string }).Name ?? "");
+}
+
 function ensurePostgres(): void {
-  if (databaseUrl) {
-    console.log("Using the DATABASE_URL supplied by the environment.");
+  const secretNames = listDeployedSecretNames();
+  if (!shouldAttachPostgres(secretNames)) {
+    console.log(
+      `App ${appName} already has a DATABASE_URL secret. Leaving the database untouched.`,
+    );
     return;
   }
 
@@ -95,16 +126,21 @@ function ensurePostgres(): void {
     console.log(`Postgres app ${postgresApp} already exists.`);
   }
 
-  fly(["postgres", "attach", postgresApp, "--app", appName, "--yes"], true);
+  fly(["postgres", "attach", postgresApp, "--app", appName, "--yes"]);
+}
+
+export function buildDeploySecrets(
+  adminEmail: string,
+  adminPassword: string,
+): string[] {
+  return [
+    `ADMIN_EMAIL=${adminEmail}`,
+    `ADMIN_PASSWORD=${adminPassword}`,
+  ];
 }
 
 function setSecrets(adminEmail: string, adminPassword: string): void {
-  const secrets = [
-    `ADMIN_EMAIL=${adminEmail}`,
-    `ADMIN_PASSWORD=${adminPassword}`,
-    `SEED_TOKEN=${seedToken}`,
-  ];
-  if (databaseUrl) secrets.push(`DATABASE_URL=${databaseUrl}`);
+  const secrets = buildDeploySecrets(adminEmail, adminPassword);
   console.log(
     `Storing ADMIN_EMAIL and ADMIN_PASSWORD as Fly secrets for app ${appName} (${adminEmail}).`,
   );
@@ -125,29 +161,6 @@ async function waitForHealth(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 3_000));
   }
   throw new Error(`The app did not become healthy at ${healthUrl}.`);
-}
-
-async function seedOwner(email: string, password: string): Promise<void> {
-  const response = await fetch(
-    new URL("/internal/seed", `https://${appName}.fly.dev`),
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Seed-Token": seedToken,
-      },
-      body: JSON.stringify({ email, password }),
-    },
-  );
-
-  if (response.status === 409) {
-    console.log("Owner account already exists. Skipping seed.");
-    return;
-  }
-
-  if (!response.ok) {
-    throw new Error(`Seed failed (${response.status}): ${await response.text()}`);
-  }
 }
 
 async function main(): Promise<void> {
@@ -174,14 +187,20 @@ async function main(): Promise<void> {
   ]);
 
   await waitForHealth();
-  await seedOwner(adminEmail, adminPassword);
 
   console.log("");
   console.log(`Deployed: https://${appName}.fly.dev`);
-  console.log(`SEED_TOKEN: ${seedToken}`);
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+// Runs only when executed directly (node scripts/deploy.ts), so a unit test
+// can import buildDeploySecrets and shouldAttachPostgres without a deploy.
+const isEntry =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isEntry) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}

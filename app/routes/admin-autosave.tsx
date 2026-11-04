@@ -10,7 +10,7 @@ const SAVE_DRAFT_INTENT = "save-draft";
 // Autosave endpoint for the Markdown editor. The client calls this route with
 // a same-origin fetch, so every answer is a raw Response object: React Router
 // 8 encodes framework action results as turbo-stream, and plain JSON reaches
-// the client only when the action returns a raw Response (see seed.tsx).
+// the client only when the action returns a raw Response (see app/routes/image.tsx).
 // Status set: 200 success, 400 validation failure and origin rejection,
 // 401 session expiry, 409 conflict.
 export async function action({ request }: ActionFunctionArgs) {

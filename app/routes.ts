@@ -12,7 +12,6 @@ export default [
   route("images/:id", "routes/image.tsx"),
   route("login", "routes/login.tsx"),
   route("logout", "routes/logout.tsx"),
-  route("internal/seed", "routes/seed.tsx"),
   route("admin/preview", "routes/admin-preview.tsx"),
   route("admin/autosave", "routes/admin-autosave.tsx"),
   layout("routes/admin-layout.tsx", [

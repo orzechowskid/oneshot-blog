@@ -31,7 +31,6 @@ export default defineConfig({
       ADMIN_PASSWORD: password,
       ADMIN_EMAIL: email,
       COOKIE_SECURE: "false",
-      SEED_TOKEN: "integration-test-seed-token",
     },
   },
 });
