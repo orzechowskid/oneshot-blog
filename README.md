@@ -108,7 +108,7 @@ npm start
 | `FLY_POSTGRES_APP` | Deploy | Fly Postgres app name. Default is `<FLY_APP>-db` |
 | `FLY_API_TOKEN` | Deploy | Fly API token for unattended deploys |
 | `FLYCTL_BIN` | Deploy | Path to the `flyctl` binary |
-| `DATABASE_SSL` | Server | Set to `true` for PostgreSQL connections that need SSL |
+| `DATABASE_SSL` | Server, reset | Set to `true` for PostgreSQL connections that need SSL |
 
 ## Deployment to Fly.io
 
@@ -188,10 +188,10 @@ npm run owner:reset
 Production form, run inside the Fly machine:
 
 ```bash
-fly ssh console -a oneshot-blog -C "node scripts/owner-reset.ts"
+fly ssh console -a oneshot-blog -C "sh -c 'cd /app && node scripts/owner-reset.ts'"
 ```
 
-The command reads only environment variables: the machine's `DATABASE_URL` secret and, after a deploy that stored them, the `ADMIN_EMAIL` and `ADMIN_PASSWORD` secrets. `fly ssh console` enters the machine as root, so the command runs as root inside the machine.
+The command reads only environment variables. The command runs as the user the ssh console gives you. The console shell does not automatically inherit the app's Fly secrets, so the operator must supply the admin pair in that command's environment. Both the working directory and the secret inheritance are to be confirmed the first time the command is run against the live app.
 
 To rotate the production credential, keep the current one reachable until the new one works: read your saved copy of the credential first, deploy with `ADMIN_EMAIL` and `ADMIN_PASSWORD` set, run the reset command, sign in with the new credential, and only then retire the saved copy. An early delete is unrecoverable: no in-app path shows a password, and the seed route refuses to create a second account once a user exists.
 
