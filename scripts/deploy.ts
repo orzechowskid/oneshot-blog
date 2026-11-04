@@ -43,14 +43,38 @@ function fly(args: string[], allowFailure = false): FlyResult {
   return output;
 }
 
+function refuseAppListRead(): never {
+  console.error(
+    `Could not read the app list. ` +
+      `Run the list command by hand and check its output: ` +
+      `fly apps list --json. ` +
+      `No app was created and no secret was written.`,
+  );
+  process.exit(1);
+}
+
 function appExists(name: string): boolean {
-  const result = fly(["apps", "list", "--json"]);
-  try {
-    const apps = JSON.parse(result.stdout) as Array<{ Name?: string }>;
-    return apps.some((app) => app.Name === name);
-  } catch {
-    return false;
+  const result = fly(["apps", "list", "--json"], true);
+  if (result.status !== 0) {
+    refuseAppListRead();
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    refuseAppListRead();
+  }
+  if (!Array.isArray(parsed)) {
+    refuseAppListRead();
+  }
+  const names = parsed.map((entry) => {
+    const name = entryName(entry);
+    if (name === undefined) {
+      refuseAppListRead();
+    }
+    return name;
+  });
+  return names.includes(name);
 }
 
 function ensureApp(): void {
@@ -78,7 +102,7 @@ function refuseSecretListRead(): never {
   process.exit(1);
 }
 
-function secretName(entry: unknown): string | undefined {
+function entryName(entry: unknown): string | undefined {
   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
     return undefined;
   }
@@ -107,7 +131,7 @@ function listDeployedSecretNames(): string[] {
     refuseSecretListRead();
   }
   return parsed.map((entry) => {
-    const name = secretName(entry);
+    const name = entryName(entry);
     if (name === undefined) {
       refuseSecretListRead();
     }
@@ -146,7 +170,19 @@ function ensurePostgres(): void {
     console.log(`Postgres app ${postgresApp} already exists.`);
   }
 
-  fly(["postgres", "attach", postgresApp, "--app", appName, "--yes"]);
+  const attach = fly(
+    ["postgres", "attach", postgresApp, "--app", appName, "--yes"],
+    true,
+  );
+  if (attach.status !== 0) {
+    console.error(
+      `Could not attach the Postgres app. ` +
+        `Run the attach command by hand: ` +
+        `fly postgres attach ${postgresApp} --app ${appName}. ` +
+        `No secret was written and nothing was deployed.`,
+    );
+    process.exit(1);
+  }
 }
 
 export function buildDeploySecrets(
