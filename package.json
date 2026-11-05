@@ -21,7 +21,6 @@
     "build-storybook": "storybook build",
     "test:storybook": "npm run build-storybook && playwright test -c tests/storybook/playwright.config.ts",
     "test:storybook:update": "npm run build-storybook && playwright test -c tests/storybook/playwright.config.ts --update-snapshots",
-    "deploy": "node --env-file-if-exists=.env scripts/deploy.ts",
     "owner:reset": "node --env-file-if-exists=.env scripts/owner-reset.ts",
     "verify": "npm run typecheck && npm run test && npm run build"
   },

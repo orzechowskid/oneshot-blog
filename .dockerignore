@@ -12,3 +12,5 @@ npm-debug.log
 .react-router
 
 .github
+admin-creds.dotenv
+admin-creds-stage.dotenv

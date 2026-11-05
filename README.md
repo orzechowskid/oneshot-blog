@@ -10,20 +10,17 @@ The app runs on Node.js 24 and uses native TypeScript type stripping. It does no
 - npm 11 or newer
 - Docker, for the local PostgreSQL service
 - Chromium for Playwright: `npx playwright install chromium`
-- `flyctl` for deployment, or a path to it in `FLYCTL_BIN`
+- `flyctl` for the operator runbook steps; the pipelines install their own
 
 No other global CLI tools are needed. Playwright browsers are installed through `npx`.
 
 ## Installer
 
-`npm run setup` asks for the mode and the owner credentials, then writes `.env`.
+`npm run setup` asks for the owner email, the owner password, and the database URL, then writes a development `.env` with the Docker Compose database URL, port 3000, and the `ADMIN_EMAIL` and `ADMIN_PASSWORD` pair.
 
-- Choose `1` (local): writes a development `.env` with the Docker Compose database URL, port 3000, the `ADMIN_EMAIL` and `ADMIN_PASSWORD` pair.
-- Choose `2` (Fly.io): writes the settings used by `scripts/deploy.ts` and updates the `app` and `primary_region` in `fly.toml`. It can run the deploy at the end.
+The installer asks for the owner email and password. The email has no default and must be a valid address. The address you type there is a local development address and not the production admin address, because the installer generates the credential pair only for the local database. Leave the password blank to generate one. The owner password prompt does not echo typed characters. The installer writes the owner password to `.env`; it does not print the secret. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
 
-The installer asks for the owner email and password. The email has no default and must be a valid address. Leave the password blank to generate one. The owner password and Fly API token prompts do not echo typed characters. The installer writes the owner password to `.env`; it does not print the secret. An existing `.env` is copied to `.env.backup-<timestamp>` before it is replaced.
-
-The npm scripts load `.env` with Node's `--env-file-if-exists=.env`, so the file applies to `npm run dev`, `npm start`, and `npm run deploy`.
+The npm scripts load `.env` with Node's `--env-file-if-exists=.env`, so the file applies to `npm run dev` and `npm start`.
 
 ```bash
 npm install
@@ -84,9 +81,8 @@ npm start
 | `npm run build-storybook` | Build a static Storybook |
 | `npm run test:storybook` | Build Storybook and run visual and accessibility tests |
 | `npm run test:storybook:update` | Regenerate visual snapshots |
-| `npm run deploy` | Create or update the Fly.io app, check the Postgres attachment, and set the admin credential secrets |
 | `npm run owner:reset` | Reset the admin email and password in the database |
-| `npm run setup` | Write a local or Fly.io `.env` interactively |
+| `npm run setup` | Write a local `.env` interactively |
 | `npm run verify` | Run typecheck, unit tests, and production build |
 
 ## Environment variables
@@ -97,72 +93,128 @@ npm start
 | `PORT` | Server | HTTP port. Default is `3000`; Fly uses `8080` |
 | `NODE_ENV` | Server, auth | `production` enables production behavior |
 | `COOKIE_SECURE` | Auth | `true` or `false`; production defaults to `true` |
-| `ADMIN_EMAIL` | Server, deploy, reset | Admin email. The server creates the admin account from it when the users table is empty |
-| `ADMIN_PASSWORD` | Server, deploy, reset | Admin password. The deploy script refuses to run when it is absent |
-| `FLY_APP` | Deploy | Fly app name. Default is `oneshot-blog` |
-| `FLY_REGION` | Deploy | Fly region for the Postgres app. Default is `iad` |
-| `FLY_ORG` | Deploy | Optional Fly organization |
-| `FLY_POSTGRES_APP` | Deploy | Fly Postgres app name. Default is `<FLY_APP>-db` |
-| `FLY_API_TOKEN` | Deploy | Fly API token for unattended deploys |
-| `FLYCTL_BIN` | Deploy | Path to the `flyctl` binary |
+| `ADMIN_EMAIL` | Server, deploy engine, reset | Admin email. The server creates the admin account from it when the users table is empty |
+| `ADMIN_PASSWORD` | Server, deploy engine, reset | Admin password. The deploy engine refuses to run when it is absent |
+| `FLY_API_TOKEN` | Deploy engine | Fly API token. The pipeline supplies it from a per-environment repository secret |
+| `FLYCTL_BIN` | Deploy engine | Path to the `flyctl` binary. The pipeline installs `flyctl`, so the default is used |
 | `DATABASE_SSL` | Server, reset | Set to `true` for PostgreSQL connections that need SSL |
 
 ## Deployment to Fly.io
 
-The deploy script is unattended. It reads `ADMIN_EMAIL` and `ADMIN_PASSWORD` from the environment or `.env`. When either is unset it refuses: it prints an instruction naming both variables and exits before contacting `flyctl`, the app, or any secret. With both set, it:
+There are two environments, each with its own Fly app, its own Postgres app, its own public address, its own admin credential pair, and its own app-scoped token:
 
-1. Creates the Fly app if it does not exist.
-2. Lists the deployed app's secret names, and only when `DATABASE_URL` is absent creates the Postgres app (if missing) and attaches it; when the secret is present the deploy changes nothing about the database.
-3. Sets `ADMIN_EMAIL` and `ADMIN_PASSWORD` as Fly secrets. Before this step it prints a line naming the app and the email whose credential it stores.
+| Environment | Fly app | Address | Configuration file |
+| --- | --- | --- | --- |
+| `prod` | `danorz-com-blog-prod` | `https://danorz-com-blog-prod.fly.dev` | `fly.prod.toml` |
+| `stage` | `danorz-com-blog-stage` | `https://danorz-com-blog-stage.fly.dev` | `fly.stage.toml` |
+
+The repository holds exactly these two Fly configuration files and no default file. Each file sets the internal port to `8080`. The Dockerfile builds with Node 24, runs `npm ci`, builds the app, removes development dependencies, and starts `node server.ts`.
+
+No local command performs a deploy; the deploy engine `scripts/deploy.ts` is run only by the two pipelines, and it refuses to run without an environment name of `prod` or `stage`.
+
+Each pipeline runs the engine for its environment:
+
+- Production: `node scripts/deploy.ts prod --config fly.prod.toml`
+- Pre-production: `node scripts/deploy.ts stage --config fly.stage.toml`
+
+For each deploy the engine:
+
+1. Probes the app with `flyctl status --app <app> --json` and creates the app only when the probe says it is missing.
+2. Reads the deployed secret names. Only when `DATABASE_URL` is absent does it create the Postgres app (if missing) and attach it; when the secret is present the deploy changes nothing about the database.
+3. Stores `ADMIN_EMAIL` and `ADMIN_PASSWORD` as staged Fly secrets, so the admin pair is stored as app secrets on every deploy. After the deploy, `flyctl secrets list --app <app>` shows the pair alongside `DATABASE_URL`. Before this step it prints a line naming the app and the email whose credential pair is stored.
 4. Deploys the Docker image with a remote builder.
-5. Waits for `https://<app>.fly.dev/health`.
+5. Waits for the environment's `https://<app>.fly.dev/health`.
 
-The deploy writes no `DATABASE_URL` secret; the only mechanism that sets the deployed app's database address is `fly postgres attach`. When the deploy runs the Postgres attach step, the generated database role password is not shown because the deploy captures command output; to see and store that password, run `fly postgres attach` by hand.
-
-Run it with a Fly token:
-
-```bash
-FLY_API_TOKEN=... npm run deploy
-```
-
-Set the admin credential explicitly. Use the production values, not the local development ones: the deploy stores the pair as Fly secrets.
-
-```bash
-FLY_API_TOKEN=... \
-ADMIN_EMAIL=admin@example.com \
-ADMIN_PASSWORD='a-long-admin-password' \
-npm run deploy
-```
-
-The deploy script uses `flyctl` because Fly.io does not expose a single npm-only deployment path. Set `FLYCTL_BIN` to a local binary if `flyctl` is not on `PATH`. The running application itself does not need `flyctl` or any global tool.
-
-`fly.toml` sets the internal port to `8080`. The Dockerfile builds with Node 24, runs `npm ci`, builds the app, removes development dependencies, and starts `node server.ts`.
+The engine never prints a credential value or a token value, and it never writes a `DATABASE_URL` secret; the attach step is the only mechanism that sets the deployed database address. When the attach step runs, the generated database role password is not shown because the engine captures command output; to see and store that password, run the attach command by hand, as the operator runbook below does.
 
 ## GitHub Actions deployment
 
-`.github/workflows/deploy.yml` deploys when a pull request is merged into `main`. It checks out the merge commit and runs `flyctl deploy --remote-only --yes`. It uses `pull_request_target` so the Fly secret is available for pull requests from forks; it checks out the merged commit, not the pull request head.
+`.github/workflows/deploy-prod.yml` deploys production when a pull request is merged into `main`. `.github/workflows/deploy-stage.yml` deploys pre-production when a pull request is merged into `develop`. A direct push to either branch does not deploy; only a merge through a closed pull request does.
 
-The workflow needs one secret in the GitHub repository:
+Both pipelines use `pull_request_target` so pull requests from forks can deploy, and they check out the merged commit, not the pull request head, so fork code never runs in the deploy step. Each pipeline runs `npm run typecheck` and `npm test` before the deploy step, and when either fails the pipeline stops. The stage pipeline additionally runs the Playwright browser suite against its own Postgres service container; the production pipeline has no browser suite.
 
-- `FLY_API_TOKEN`: a Fly deploy token limited to this app.
+Each pipeline reads three repository secrets and maps them onto the variables the engine reads:
 
-Create the app and database once before the first action run, for example with `npm run setup` and mode `2`. Then create a deploy token:
+| Pipeline | Token secret | Credential secrets |
+| --- | --- | --- |
+| `deploy-prod.yml` | `FLY_API_TOKEN_PROD` | `ADMIN_EMAIL_PROD`, `ADMIN_PASSWORD_PROD` |
+| `deploy-stage.yml` | `FLY_API_TOKEN_STAGE` | `ADMIN_EMAIL_STAGE`, `ADMIN_PASSWORD_STAGE` |
+
+The tokens are app-scoped: `FLY_API_TOKEN_PROD` is limited to `danorz-com-blog-prod`, and `FLY_API_TOKEN_STAGE` is limited to `danorz-com-blog-stage`. Because the engine stores the admin pair as app secrets on every deploy, the pair also exists in the matching repository secrets; anyone who can read repository secrets can sign in to that environment. Rotate the pair by deploying with the new pair, running the credential reset in the environment's machine, and only then retiring the old pair.
+
+The pipelines use no GitHub token of their own. GitHub Actions supplies an ephemeral `GITHUB_TOKEN`, but neither pipeline uses it.
+
+### Operator runbook
+
+The Migration Plan in `openspec/changes/fly-dual-environment-deploys/design.md` is the full runbook: it is numbered, in order, and every step states its rollback. The operator runs the flyctl steps with an account-level token. The steps that change the deployed world:
+
+First creation, production (the pre-production app and database are created the same way with the `danorz-com-blog-stage` and `danorz-com-blog-stage-db` names):
 
 ```bash
-flyctl tokens create deploy -a oneshot-blog -x 8760h
+fly apps create danorz-com-blog-prod
+fly postgres create --name danorz-com-blog-prod-db --region iad --vm-size shared-cpu-1x --volume-size 1 --initial-cluster-size 1
 ```
 
-Copy the token into GitHub: repository Settings → Secrets and variables → Actions → New repository secret. Use the name `FLY_API_TOKEN`.
-
-No GitHub token is needed for the workflow. GitHub Actions supplies an ephemeral `GITHUB_TOKEN`, but this workflow does not use it. Pushing the repository to GitHub needs your normal GitHub authentication (SSH key, browser login, or a personal access token).
-
-The workflow deploys the existing Fly app. It does not create the app, database, or owner account. Run `npm run deploy` once locally to provision those, or run `npm run setup` and choose Fly.io. If the app name is not `oneshot-blog`, update `app` in `fly.toml` and pass the same name to `flyctl tokens create deploy -a`.
-
-The workflow deploys with `flyctl deploy` on a merged pull request. It reads no credential variable and sets no secret, so after a deploy through this route `ADMIN_EMAIL` and `ADMIN_PASSWORD` are absent from the app. To give the machine the pair, an operator runs:
+Attach by hand, so the generated database role password is visible; record it. The attach command takes no confirmation flag:
 
 ```bash
-fly secrets set -a oneshot-blog --stage ADMIN_EMAIL=... ADMIN_PASSWORD=...
+fly postgres attach danorz-com-blog-prod-db --app danorz-com-blog-prod
 ```
+
+Mint the app-scoped token and set it as the repository secret, the value piped so it is never printed:
+
+```bash
+flyctl tokens create deploy -a danorz-com-blog-prod -x 8760h -j | jq -jr '.token' | gh secret set FLY_API_TOKEN_PROD -R orzechowskid/oneshot-blog
+```
+
+The stage token is minted the same way into `FLY_API_TOKEN_STAGE`. The per-environment credential secrets are set from the matching credential file the same way, piped so the values are never printed.
+
+Snapshot the old database (insurance, optional; a volume snapshot of a running database is a block copy, not a consistent dump):
+
+```bash
+flyctl volume list --app oneshot-blog-db
+flyctl volume snapshots create <volume-id> --app oneshot-blog-db
+flyctl volume snapshots list <volume-id> --app oneshot-blog-db
+```
+
+Destroy the old app and the old database app (irreversible; only after both sign-in proofs passed):
+
+```bash
+fly apps destroy oneshot-blog-db --yes
+fly apps destroy oneshot-blog --yes
+```
+
+Apply branch protection on `main`: pull request required, no direct push, no force push, and required approving review count 0. The count is 0, not 1: the repository has one author, and GitHub does not let an author approve their own pull request, so a required review of one would make the production deploy permanently unreachable. Write `protection.json`:
+
+```json
+{
+  "required_status_checks": null,
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0,
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": false
+  },
+  "restrictions": null,
+  "required_linear_history": false,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+```
+
+and apply it:
+
+```bash
+gh api -X PUT repos/orzechowskid/oneshot-blog/branches/main/protection --input protection.json
+```
+
+Read-only proof:
+
+```bash
+gh api repos/orzechowskid/oneshot-blog/branches/main/protection --jq '{enforce_admins:.enforce_admins.enabled, approvals:.required_pull_request_reviews.required_approving_review_count, force_push:.allow_force_pushes.enabled, deletions:.allow_deletions.enabled}'
+```
+
+Expected output: `{"enforce_admins":true,"approvals":0,"force_push":false,"deletions":false}`.
 
 ## Admin credential reset
 
@@ -185,12 +237,18 @@ npm run owner:reset
 Production form, run inside the Fly machine:
 
 ```bash
-fly ssh console -a oneshot-blog -C "sh -c 'cd /app && node scripts/owner-reset.ts'"
+fly ssh console -a danorz-com-blog-prod -C "sh -c 'cd /app && node scripts/owner-reset.ts'"
+```
+
+Pre-production form:
+
+```bash
+fly ssh console -a danorz-com-blog-stage -C "sh -c 'cd /app && node scripts/owner-reset.ts'"
 ```
 
 The command reads only environment variables. The command runs as the user the ssh console gives you. The console shell does not automatically inherit the app's Fly secrets, so the operator must supply the admin pair in that command's environment. Both the working directory and the secret inheritance are to be confirmed the first time the command is run against the live app.
 
-To rotate the production credential, keep the current one reachable until the new one works: read your saved copy of the credential first, deploy with `ADMIN_EMAIL` and `ADMIN_PASSWORD` set, run the reset command, sign in with the new credential, and only then retire the saved copy. An early delete is unrecoverable: no in-app path shows a password.
+To rotate a credential pair, keep the current one reachable until the new one works: deploy with the new pair, run the reset command in the environment's machine, sign in with the new credential, and only then retire the saved copy. An early delete is unrecoverable: no in-app path shows a password.
 
 ## Tests
 

@@ -35,3 +35,7 @@ pnpm-debug.log*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Credential files: hold live credentials, must never be committed
+admin-creds.dotenv
+admin-creds-stage.dotenv

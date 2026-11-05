@@ -1,5 +1,6 @@
-// scripts/deploy.ts exports the two decision functions buildDeploySecrets and
-// shouldAttachPostgres and runs main() only when executed directly, so this
+// scripts/deploy.ts exports the three decision functions buildDeploySecrets,
+// resolveEnvironment, and shouldAttachPostgres and runs main() only when executed
+// directly, so this
 // file imports them in a node environment with no flyctl call, no network,
 // and no deploy. It asserts that the secret list builder returns exactly the
 // admin pair and never a DATABASE_URL or SEED_TOKEN entry, even with a local
@@ -8,7 +9,11 @@
 // exports no seeding step.
 
 import * as deployModule from "../../scripts/deploy";
-import { buildDeploySecrets, shouldAttachPostgres } from "../../scripts/deploy";
+import {
+  buildDeploySecrets,
+  resolveEnvironment,
+  shouldAttachPostgres,
+} from "../../scripts/deploy";
 import { expect, test } from "vitest";
 
 const FIXTURE_EMAIL = "deploy-test@example.com";
@@ -52,9 +57,34 @@ test("shouldAttachPostgres is true for an empty deployed secret list", () => {
   expect(shouldAttachPostgres([])).toBe(true);
 });
 
-test("the module exports no seeding step: the export list is exactly the two decision functions", () => {
+test("resolveEnvironment returns the production row exactly for prod", () => {
+  expect(resolveEnvironment("prod")).toEqual({
+    app: "danorz-com-blog-prod",
+    postgresApp: "danorz-com-blog-prod-db",
+    configFile: "fly.prod.toml",
+    region: "iad",
+    volumeSize: 1,
+  });
+});
+
+test("resolveEnvironment returns the pre-production row exactly for stage", () => {
+  expect(resolveEnvironment("stage")).toEqual({
+    app: "danorz-com-blog-stage",
+    postgresApp: "danorz-com-blog-stage-db",
+    configFile: "fly.stage.toml",
+    region: "iad",
+    volumeSize: 1,
+  });
+});
+
+test("resolveEnvironment returns undefined for a name that is neither prod nor stage", () => {
+  expect(resolveEnvironment("production")).toBeUndefined();
+});
+
+test("the module exports no seeding step: the export list is exactly the three decision functions", () => {
   expect(Object.keys(deployModule).sort()).toEqual([
     "buildDeploySecrets",
+    "resolveEnvironment",
     "shouldAttachPostgres",
   ]);
 });

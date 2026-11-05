@@ -1,10 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
   existsSync,
-  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -13,12 +11,9 @@ import { createInterface } from "node:readline/promises";
 
 const root = process.cwd();
 const envPath = join(root, ".env");
-const flyTomlPath = join(root, "fly.toml");
 
 const LOCAL_DATABASE_URL = "postgres://blog:blog@127.0.0.1:5432/blog";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const APP_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
-const REGION_PATTERN = /^[a-z0-9-]{1,32}$/;
 
 const bufferedLines: string[] = [];
 const waiters: Array<(line: string | null) => void> = [];
@@ -134,31 +129,6 @@ async function ask(question: string, fallback = ""): Promise<string> {
   return answer || fallback;
 }
 
-async function askChoice(
-  question: string,
-  fallback: string,
-  allowed: readonly string[],
-): Promise<string> {
-  for (;;) {
-    const answer = (await ask(question, fallback)).toLowerCase();
-    if (allowed.includes(answer)) return answer;
-    console.log(`Choose one of: ${allowed.join(", ")}.`);
-  }
-}
-
-async function askValidated(
-  question: string,
-  fallback: string,
-  pattern: RegExp,
-  error: string,
-): Promise<string> {
-  for (;;) {
-    const answer = (await ask(question, fallback)).toLowerCase();
-    if (pattern.test(answer)) return answer;
-    console.log(error);
-  }
-}
-
 async function askEmail(question: string, fallback: string): Promise<string> {
   for (;;) {
     const answer = (await ask(question, fallback)).toLowerCase();
@@ -213,146 +183,32 @@ function saveEnv(entries: Array<[string, string]>): string | null {
   return backupPath;
 }
 
-type FlyTomlResult = "updated" | "already-set" | "missing";
-
-function updateFlyToml(appName: string, region: string): FlyTomlResult {
-  if (!existsSync(flyTomlPath)) return "missing";
-
-  const original = readFileSync(flyTomlPath, "utf8");
-  let text = original.replace(/^app\s*=\s*".*"$/m, `app = "${appName}"`);
-  text = text.replace(
-    /^primary_region\s*=\s*".*"$/m,
-    `primary_region = "${region}"`,
-  );
-
-  if (text === original) return "already-set";
-
-  writeFileSync(flyTomlPath, text);
-  return "updated";
-}
-
-function runDeploy(): number {
-  const result = spawnSync(
-    process.execPath,
-    ["--env-file-if-exists=.env", "scripts/deploy.ts"],
-    { cwd: root, stdio: "inherit" },
-  );
-
-  if (result.error) {
-    console.error(`Could not run the deploy script: ${result.error.message}`);
-    return 1;
-  }
-
-  return result.status ?? 1;
-}
-
 async function main(): Promise<void> {
-  const mode = await askChoice(
-    "Where will this project run? 1 = local, 2 = Fly.io",
-    "1",
-    ["1", "2"],
-  );
-
   const email = await askEmail("Owner email", "");
   const password = await askPassword();
+  const databaseUrl = await ask("DATABASE_URL", LOCAL_DATABASE_URL);
 
-  if (mode === "1") {
-    const databaseUrl = await ask("DATABASE_URL", LOCAL_DATABASE_URL);
-
-    const backup = saveEnv([
-      ["DATABASE_URL", databaseUrl],
-      ["PORT", "3000"],
-      ["NODE_ENV", "development"],
-      ["COOKIE_SECURE", "false"],
-      ["ADMIN_EMAIL", email],
-      ["ADMIN_PASSWORD", password],
-    ]);
-
-    rl.close();
-
-    console.log(`\nWrote ${envPath}.`);
-    if (backup) console.log(`Existing .env backed up to ${backup}.`);
-    console.log(`Owner email: ${email}`);
-
-    console.log("\nNext steps:");
-    console.log("  npm run db:up");
-    console.log("  npm run dev");
-    console.log(
-      "Open http://127.0.0.1:3000 and sign in with the owner email and the password in .env.",
-    );
-    return;
-  }
-
-  const appName = await askValidated(
-    "Fly app name",
-    "oneshot-blog",
-    APP_NAME_PATTERN,
-    "Use lowercase letters, digits, and hyphens, starting with a letter or digit.",
-  );
-  const region = await askValidated(
-    "Fly region",
-    "iad",
-    REGION_PATTERN,
-    "Use a lowercase Fly region code such as iad or lhr.",
-  );
-  const apiToken = (
-    await readSecretLine("Fly API token (leave blank to use flyctl login): ")
-  ).trim();
-  const databaseUrl = await ask(
-    "DATABASE_URL (leave blank to create Fly Postgres)",
-    "",
-  );
-
-  const entries: Array<[string, string]> = [
-    ["FLY_APP", appName],
-    ["FLY_REGION", region],
-    ["FLY_POSTGRES_APP", `${appName}-db`],
-    ["FLY_API_TOKEN", apiToken],
-    ["FLYCTL_BIN", "flyctl"],
+  const backup = saveEnv([
+    ["DATABASE_URL", databaseUrl],
+    ["PORT", "3000"],
+    ["NODE_ENV", "development"],
+    ["COOKIE_SECURE", "false"],
     ["ADMIN_EMAIL", email],
     ["ADMIN_PASSWORD", password],
-  ];
-
-  if (databaseUrl) entries.push(["DATABASE_URL", databaseUrl]);
-
-  const backup = saveEnv(entries);
-  const tomlResult = updateFlyToml(appName, region);
-
-  console.log(`\nWrote ${envPath}.`);
-  if (backup) console.log(`Existing .env backed up to ${backup}.`);
-  if (tomlResult === "updated") {
-    console.log(`Updated fly.toml app and primary_region.`);
-  } else if (tomlResult === "already-set") {
-    console.log(`fly.toml already matches FLY_APP and FLY_REGION.`);
-  } else {
-    console.log(
-      "fly.toml was not found. Set app and primary_region to match FLY_APP and FLY_REGION.",
-    );
-  }
-  console.log(`Owner email: ${email}`);
-
-  const deployNow = await askChoice(
-    "Deploy to Fly.io now? y = yes, n = no",
-    "n",
-    ["y", "n", "yes", "no"],
-  );
+  ]);
 
   rl.close();
 
-  if (deployNow === "y" || deployNow === "yes") {
-    const status = runDeploy();
-    if (status !== 0) {
-      console.log(
-        "\nDeploy failed. The configuration in .env is saved; fix the error and run npm run deploy.",
-      );
-      process.exitCode = status;
-    }
-    return;
-  }
+  console.log(`\nWrote ${envPath}.`);
+  if (backup) console.log(`Existing .env backed up to ${backup}.`);
+  console.log(`Owner email: ${email}`);
 
   console.log("\nNext steps:");
-  console.log("  flyctl auth login   (if FLY_API_TOKEN is empty)");
-  console.log("  npm run deploy");
+  console.log("  npm run db:up");
+  console.log("  npm run dev");
+  console.log(
+    "Open http://127.0.0.1:3000 and sign in with the owner email and the password in .env.",
+  );
 }
 
 await main();
