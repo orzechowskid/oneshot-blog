@@ -448,3 +448,102 @@ The app-existence probe (`probeApp`) now runs a single per-app status read: `fly
 Steps whose output did not match the stated expectation: step 16 only (credential refusal printed instead of the config-file mismatch message, because the missing-variable check runs first in `scripts/deploy.ts`).
 
 No deployed app was contacted, no token was minted, no secret was written, and no app was created or destroyed during this verification.
+
+## Post-review fixes and final gate
+
+All commands were run from the repository root `/home/dan/repos/oneshot-blog`.
+Results are measured, not estimated. Outputs are pasted exactly as printed.
+
+1. `npm run typecheck`
+
+   Command: `npm run typecheck`
+
+   Exit status: 0
+
+   Output:
+
+   ```
+   > oneshot-blog@1.0.0 typecheck
+   > tsc --noEmit
+   ```
+
+2. `npx vitest run`
+
+   Command: `npx vitest run`
+
+   Exit status: 0
+
+   Output:
+
+   ```
+   RUN  v5.0.5 /home/dan/repos/oneshot-blog
+
+
+    Test Files  12 passed (12)
+          Tests  119 passed (119)
+      Start at  03:31:12
+      Duration  807ms (tests 44%, import 42%, transform 10%, worker 4%)
+   ```
+
+   Counts: Test Files 12 passed (12), Tests 119 passed (119).
+
+3. The reviewer verdict was BLOCK on one finding: the deploy helper built its failure message from the full argument list, so a failed secret write threw a message containing the admin password value, printed by the top-level error handler. The fix is a redaction helper in `scripts/deploy.ts` that replaces any argument starting with `ADMIN_EMAIL=` or `ADMIN_PASSWORD=` by the argument name plus a redaction marker, and the deploy helper no longer echoes the deploy tool standard error for the call that carries secrets.
+
+4. The three refusal commands and their measured output, each run with `env -u ADMIN_EMAIL -u ADMIN_PASSWORD -u FLY_API_TOKEN -u DATABASE_URL`:
+
+   a. no argument
+
+   Command: `env -u ADMIN_EMAIL -u ADMIN_PASSWORD -u FLY_API_TOKEN -u DATABASE_URL node scripts/deploy.ts`
+
+   Exit status: 1
+
+   Output:
+
+   ```
+   The first argument must be an environment name. Accepted names: prod, stage. No app was created and no secret was written. Run the deploy with one of these commands:
+   node scripts/deploy.ts prod --config fly.prod.toml
+   node scripts/deploy.ts stage --config fly.stage.toml
+   ```
+
+   b. prod with no credential pair
+
+   Command: `env -u ADMIN_EMAIL -u ADMIN_PASSWORD -u FLY_API_TOKEN -u DATABASE_URL node scripts/deploy.ts prod`
+
+   Exit status: 1
+
+   Output:
+
+   ```
+   Missing required environment variables: FLY_API_TOKEN, ADMIN_EMAIL, ADMIN_PASSWORD.
+   The admin credential pair is ADMIN_EMAIL and ADMIN_PASSWORD; missing from the pair: ADMIN_EMAIL, ADMIN_PASSWORD. Run the deploy with one of these commands:
+   node scripts/deploy.ts prod --config fly.prod.toml
+   node scripts/deploy.ts stage --config fly.stage.toml
+   Set the missing variables in the environment, then run the deploy again.
+   ```
+
+   c. prod with `--config fly.stage.toml`
+
+   Command: `env -u ADMIN_EMAIL -u ADMIN_PASSWORD -u FLY_API_TOKEN -u DATABASE_URL node scripts/deploy.ts prod --config fly.stage.toml`
+
+   Exit status: 1
+
+   Output:
+
+   ```
+   Missing required environment variables: FLY_API_TOKEN, ADMIN_EMAIL, ADMIN_PASSWORD.
+   The admin credential pair is ADMIN_EMAIL and ADMIN_PASSWORD; missing from the pair: ADMIN_EMAIL, ADMIN_PASSWORD. Run the deploy with one of these commands:
+   node scripts/deploy.ts prod --config fly.prod.toml
+   node scripts/deploy.ts stage --config fly.stage.toml
+   Set the missing variables in the environment, then run the deploy again.
+   ```
+
+   The output is identical to the missing-pair refusal because the missing-variable check runs before the `--config` checks in `main()` in `scripts/deploy.ts`. In all three refusals, no deploy tool was contacted and no credential value was printed.
+
+5. The reviewer's remaining accepted findings: the status-read refusal now names the role, so the database-app case states that no Postgres app was created; every hand-run instruction names flyctl; the missing-environment-name, wrong-environment-name and missing-pair refusals each print the two full deploy command lines; README.md carries one sentence saying the installer address is a local development address and should not be the production admin address.
+
+6. The reviewer's residual risks, listed as written:
+
+   - the deploy tool classifies a missing app from the words not found in its message, so a differently worded error yields a refusal that writes nothing, confirmed on the first live run;
+   - the GitHub repository secret state, the release counts, the secrets listing, and both sign-in proofs are not judgeable from the repository.
+
+No deployed app was contacted, no token was minted, no secret was written, and no app was created or destroyed during these checks.
