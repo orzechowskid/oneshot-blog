@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import * as testAccount from "./test-account";
 
 // Admin list scenarios from specs/blog-drafting/spec.md,
 // "Admin list shows draft attachment and last change". Times are read
@@ -7,9 +8,9 @@ import { expect, test, type Page } from "@playwright/test";
 // attribute is parsed and compared as a date. No autosave waits are
 // needed: every save here is an explicit button click.
 
-const OWNER_EMAIL = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
-const OWNER_PASSWORD =
-  process.env.BOOTSTRAP_PASSWORD ?? "test-owner-password";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? testAccount.ADMIN_EMAIL;
+const ADMIN_PASSWORD =
+  process.env.ADMIN_PASSWORD ?? testAccount.ADMIN_PASSWORD;
 
 type PostValues = {
   title: string;
@@ -20,8 +21,8 @@ type PostValues = {
 
 async function login(page: Page): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
-  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/admin/);
 }

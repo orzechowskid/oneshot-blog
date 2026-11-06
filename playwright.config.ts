@@ -1,9 +1,10 @@
 import { defineConfig } from "@playwright/test";
+import { ADMIN_EMAIL, ADMIN_PASSWORD } from "./tests/integration/test-account";
 
 const databaseUrl =
   process.env.DATABASE_URL ?? "postgres://blog:blog@127.0.0.1:5432/blog";
-const password = process.env.BOOTSTRAP_PASSWORD ?? "test-owner-password";
-const email = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
+const password = process.env.ADMIN_PASSWORD ?? ADMIN_PASSWORD;
+const email = process.env.ADMIN_EMAIL ?? ADMIN_EMAIL;
 
 export default defineConfig({
   testDir: "tests/integration",
@@ -27,10 +28,9 @@ export default defineConfig({
       NODE_ENV: "production",
       PORT: "3000",
       DATABASE_URL: databaseUrl,
-      BOOTSTRAP_PASSWORD: password,
-      BOOTSTRAP_EMAIL: email,
+      ADMIN_PASSWORD: password,
+      ADMIN_EMAIL: email,
       COOKIE_SECURE: "false",
-      SEED_TOKEN: "integration-test-seed-token",
     },
   },
 });

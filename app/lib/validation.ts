@@ -131,7 +131,7 @@ export function validateEmail(email: string): string | null {
 
 export function validatePassword(password: string): string | null {
   if (password.length < 12) {
-    return "Use at least 12 characters for the owner password.";
+    return "Use at least 12 characters for the admin password.";
   }
   if (password.length > 200) {
     return "Passwords must be 200 characters or fewer.";

@@ -1,4 +1,4 @@
-app = "oneshot-blog"
+app = "danorz-com-blog-stage"
 primary_region = "iad"
 
 [build]

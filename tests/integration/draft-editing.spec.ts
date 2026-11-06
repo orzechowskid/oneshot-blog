@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import * as testAccount from "./test-account";
 
-const OWNER_EMAIL = process.env.BOOTSTRAP_EMAIL ?? "owner@example.com";
-const OWNER_PASSWORD =
-  process.env.BOOTSTRAP_PASSWORD ?? "test-owner-password";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? testAccount.ADMIN_EMAIL;
+const ADMIN_PASSWORD =
+  process.env.ADMIN_PASSWORD ?? testAccount.ADMIN_PASSWORD;
 
 const PNG_1PX = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQAAAABJRU5ErkJggg==",
@@ -11,8 +12,8 @@ const PNG_1PX = Buffer.from(
 
 async function login(page: Page): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
-  await page.getByLabel("Password").fill(OWNER_PASSWORD);
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Password").fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/admin/);
 }

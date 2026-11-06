@@ -44,18 +44,18 @@ async function initializeSchema(): Promise<void> {
 }
 
 async function bootstrapOwner(): Promise<void> {
-  const password = process.env.BOOTSTRAP_PASSWORD;
+  const password = process.env.ADMIN_PASSWORD;
   if (!password) return;
 
   const passwordError = validatePassword(password);
   if (passwordError) {
-    throw new Error(`BOOTSTRAP_PASSWORD is invalid: ${passwordError}`);
+    throw new Error(`ADMIN_PASSWORD is invalid: ${passwordError}`);
   }
 
-  const email = (process.env.BOOTSTRAP_EMAIL ?? "owner@example.com").toLowerCase();
+  const email = (process.env.ADMIN_EMAIL ?? "").toLowerCase();
   const emailError = validateEmail(email);
   if (emailError) {
-    throw new Error(`BOOTSTRAP_EMAIL is invalid: ${emailError}`);
+    throw new Error(`ADMIN_EMAIL is invalid: ${emailError}`);
   }
 
   const existing = await getPool().query<{ count: string }>(
