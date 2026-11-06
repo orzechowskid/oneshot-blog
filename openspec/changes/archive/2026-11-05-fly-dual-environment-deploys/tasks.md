@@ -343,3 +343,14 @@ destroys it, and a database snapshot is a volume snapshot.
 The measured record for every verification and refusal proof in sections 1-8 is `openspec/changes/fly-dual-environment-deploys/verification.md`: each command, its exit status, and its output as printed.
 
 The Operator runbook section has not been run.
+
+## Base-branch rule for pipeline files
+
+Operational facts measured during the live migration, in order:
+
+1. A `pull_request_target` pipeline uses the workflow files as they exist in the base branch before the merge, not the files in the merge commit.
+2. Consequence for this migration: the merge that installs `deploy-prod.yml` and `deploy-stage.yml` into `main` cannot run `deploy-prod.yml`, because `main` does not contain that file at the moment the event is evaluated. That merge runs the workflow that `main` held before the merge, which is the retired single workflow, and it fails because `fly.toml` no longer exists. Measured on the live repository: the merge of pull request 2 produced one failing run named Deploy to Fly.io, and no run of `deploy-prod.yml`.
+3. The production deploy therefore needs a second merge into `main`, made after `deploy-prod.yml` exists in `main`. Measured: the merge of pull request 3 ran `deploy-prod.yml`.
+4. For `develop` the rule works in favour of the operator: `develop` is created from the post-cutover `main`, so it already contains `deploy-stage.yml`, and the first merge into `develop` runs the stage pipeline.
+5. The corrected order for the operator: merge the cutover into `main`, expect the retired workflow to fail, create `develop` from that `main`, then deploy production with a further small merge into `main`, then deploy stage with a merge into `develop`.
+6. The measured blocker found on that deploy run: the Install dependencies step ran `npm ci` and failed with `EUSAGE` because `package.json` and `package-lock.json` were not in sync, naming `@emnapi/core@1.11.3` and `@emnapi/runtime@1.11.3` as missing from the lock file. The fix is a lock file in sync, proven by `npm ci --dry-run` exiting 0.

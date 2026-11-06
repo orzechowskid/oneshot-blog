@@ -131,6 +131,8 @@ The engine never prints a credential value or a token value, and it never writes
 
 `.github/workflows/deploy-prod.yml` deploys production when a pull request is merged into `main`. `.github/workflows/deploy-stage.yml` deploys pre-production when a pull request is merged into `develop`. A direct push to either branch does not deploy; only a merge through a closed pull request does.
 
+A pipeline only runs if its file is already in the branch the pull request targets. The merge that installs the pipeline files therefore does not deploy; the next merge into `main` deploys production, and merges into `develop` deploy pre-production. Each pipeline installs dependencies with `npm ci`, so a lock file out of sync with `package.json` fails the pipeline before any deploy step.
+
 Both pipelines use `pull_request_target` so pull requests from forks can deploy, and they check out the merged commit, not the pull request head, so fork code never runs in the deploy step. Each pipeline runs `npm run typecheck` and `npm test` before the deploy step, and when either fails the pipeline stops. The stage pipeline additionally runs the Playwright browser suite against its own Postgres service container; the production pipeline has no browser suite.
 
 Each pipeline reads three repository secrets and maps them onto the variables the engine reads:
