@@ -1,9 +1,8 @@
-# Production pipeline. pull_request_target gives fork PRs access to
-# repository secrets. The job checks out the merged commit, not the
-# untrusted PR head.
+# Production pipeline. This pipeline runs on a push to main. Branch
+# protection allows only merge commits. The job uses repository secrets
+# for the production environment only.
 on:
-  pull_request_target:
-    types: [closed]
+  push:
     branches: [main]
 
 permissions:
@@ -15,14 +14,11 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check out the merged commit
+      - name: Check out the pushed commit
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4

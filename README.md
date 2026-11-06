@@ -131,7 +131,9 @@ The engine never prints a credential value or a token value, and it never writes
 
 `.github/workflows/deploy-prod.yml` deploys production when a pull request is merged into `main`. `.github/workflows/deploy-stage.yml` deploys pre-production when a pull request is merged into `develop`. A direct push to either branch does not deploy; only a merge through a closed pull request does.
 
-A pipeline only runs if its file is already in the branch the pull request targets. The merge that installs the pipeline files therefore does not deploy; the next merge into `main` deploys production, and merges into `develop` deploy pre-production. Each pipeline installs dependencies with `npm ci`, so a lock file out of sync with `package.json` fails the pipeline before any deploy step.
+A pipeline runs when a commit is pushed to its branch, using the workflow file in that commit. Direct pushes to main are blocked by branch protection, so every push to main is a merge and every push to main deploys production; pushes to develop, direct pushes and merges alike, deploy pre-production. Each pipeline installs dependencies with `npm ci`, so a lock file out of sync with `package.json` fails the pipeline before any deploy step.
+
+GitHub blocks the `pull_request_target` event in public repositories by default on 2 December 2026, with enforcement test windows on 9 and 16 November 2026, so both pipelines trigger on a push to their branch and use no pull request event. A push to main deploys production, and a push to develop deploys pre-production.
 
 Both pipelines use `pull_request_target` so pull requests from forks can deploy, and they check out the merged commit, not the pull request head, so fork code never runs in the deploy step. Each pipeline runs `npm run typecheck` and `npm test` before the deploy step, and when either fails the pipeline stops. The stage pipeline additionally runs the Playwright browser suite against its own Postgres service container; the production pipeline has no browser suite.
 

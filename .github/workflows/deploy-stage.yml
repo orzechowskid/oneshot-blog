@@ -1,10 +1,11 @@
 name: Deploy stage to Fly.io
 
-# pull_request_target gives fork PRs access to repository secrets. The job
-# checks out the merged commit, not the untrusted PR head.
+# This pipeline runs on a push to develop, which includes a merge. The job
+# runs the browser suite against the Postgres service container defined in
+# this file, using the fixed test account from tests/integration/test-account.ts.
+# The job uses repository secrets for the pre-production environment only.
 on:
-  pull_request_target:
-    types: [closed]
+  push:
     branches: [develop]
 
 permissions:
@@ -16,7 +17,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -31,10 +31,8 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U blog -d blog" --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
-      - name: Check out the merged commit
+      - name: Check out the pushed commit
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
