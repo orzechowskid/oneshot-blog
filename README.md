@@ -2,7 +2,7 @@
 
 A small blog with a public reading view and a single-owner admin area. Posts are written in GitHub-Flavored Markdown. Uploaded images are stored in PostgreSQL.
 
-The app runs on Node.js 24 and uses native TypeScript type stripping. React Router 8 runs in framework mode with server-side rendering. Styling uses CSS Modules. Shared interactive components use `react-aria-components`.
+The app runs on Node.js 24 and uses TypeScript. React Router 8 runs in framework mode with server-side rendering. Styling uses CSS Modules. Shared interactive components use `react-aria-components`.
 
 ## Requirements
 
