@@ -354,3 +354,11 @@ Operational facts measured during the live migration, in order:
 4. For `develop` the rule works in favour of the operator: `develop` is created from the post-cutover `main`, so it already contains `deploy-stage.yml`, and the first merge into `develop` runs the stage pipeline.
 5. The corrected order for the operator: merge the cutover into `main`, expect the retired workflow to fail, create `develop` from that `main`, then deploy production with a further small merge into `main`, then deploy stage with a merge into `develop`.
 6. The measured blocker found on that deploy run: the Install dependencies step ran `npm ci` and failed with `EUSAGE` because `package.json` and `package-lock.json` were not in sync, naming `@emnapi/core@1.11.3` and `@emnapi/runtime@1.11.3` as missing from the lock file. The fix is a lock file in sync, proven by `npm ci --dry-run` exiting 0.
+
+## Post-archive change: push triggers instead of pull_request_target
+
+1. Measured on the live repository: GitHub warned that on 2 December 2026 it restricts `pull_request_target` on public repositories by default, with enforcement test windows on 9 and 16 November 2026, 16:00-18:00 UTC. The repository is public, measured with `gh repo view` returning `visibility=PUBLIC`, and has no Actions policy, measured with `gh api repos/orzechowskid/oneshot-blog/actions/policies` returning `total_count` 0.
+2. Both pipelines triggered only on `pull_request_target`, so both would stop deploying after that date.
+3. The owner chose the push trigger. Both pipeline files now trigger on a push to their branch, with no pull request event, no merged condition, and no merge-commit checkout.
+4. The consequence for `main` is unchanged behaviour, because branch protection blocks direct pushes, so a push to `main` is a merge. The consequence for `develop` is that a direct push also deploys pre-production.
+5. The consequence that removes the earlier timing quirk: a push runs the workflow file contained in that commit, so the commit that installs a pipeline runs it.
