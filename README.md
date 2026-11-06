@@ -12,8 +12,6 @@ The app runs on Node.js 24 and uses TypeScript. React Router 8 runs in framework
 - Chromium for Playwright: `npx playwright install chromium`
 - `flyctl` for the operator runbook steps; the pipelines install their own
 
-No other global CLI tools are needed. Playwright browsers are installed through `npx`.
-
 ## Installer
 
 `npm run setup` asks for the owner email, the owner password, and the database URL, then writes a development `.env` with the Docker Compose database URL, port 3000, and the `ADMIN_EMAIL` and `ADMIN_PASSWORD` pair.
